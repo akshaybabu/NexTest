@@ -10,17 +10,30 @@ from app.core.db import get_db, AsyncSessionLocal
 from app.core.deps import get_current_user
 from app.modules.auth.models import User
 from app.modules.project.models import (
-    Execution, ExecutionStep, TestCase, TestSuite, Environment, Project
+    Execution, ExecutionStep, TestCase, TestSuite, Environment, Project, Element
 )
 from app.modules.test_design.component_models import ReusableComponent
 from app.modules.web_runner.runner import execute_steps
 
 
 async def _resolve_component(component_id: str):
-    """Fetch a reusable component's steps for inline expansion."""
     async with AsyncSessionLocal() as db:
         c = (await db.execute(select(ReusableComponent).where(ReusableComponent.id == component_id))).scalar_one_or_none()
         return (c.steps or []) if c else None
+
+
+async def _build_element_lookup(project_id: str) -> dict:
+    """Build {element_id: {locator info}} for the project."""
+    async with AsyncSessionLocal() as db:
+        rows = (await db.execute(select(Element).where(Element.project_id == project_id))).scalars().all()
+        return {
+            e.id: {
+                "primary_locator": e.primary_locator,
+                "locator_type": e.locator_type,
+                "alternate_locators": e.alternate_locators or [],
+                "confidence": e.confidence or 1.0,
+            } for e in rows
+        }
 
 router = APIRouter(prefix="/executions", tags=["executions"])
 
@@ -85,9 +98,13 @@ async def _run_test_case(execution_id: str, test_case_id: str, env_base_url: str
     results = []
     try:
         if tc.type == "web":
-            results = await execute_steps(tc.steps or [], env_base_url, execution_id, browser, component_resolver=_resolve_component)
+            el_lookup = await _build_element_lookup(tc.project_id)
+            out = await execute_steps(
+                tc.steps or [], env_base_url, execution_id, browser,
+                component_resolver=_resolve_component, element_lookup=el_lookup,
+            )
+            results = out["results"]
         else:
-            # For api/db/visual we just mark as not implemented in this orchestrator path
             results = [{"index": i, "keyword": s.get("keyword"), "target": s.get("target"), "value": s.get("value"),
                         "status": "skipped", "healed": False, "healed_locator": None,
                         "duration_ms": 0, "error_message": "Use /api/api-tests/run for API tests", "screenshot_url": None}
@@ -148,7 +165,12 @@ async def _run_suite(execution_id: str, suite_id: str, env_base_url: str | None,
         total_steps += len(steps)
         try:
             if tc.type == "web":
-                res = await execute_steps(steps, env_base_url, execution_id, browser, component_resolver=_resolve_component)
+                el_lookup = await _build_element_lookup(tc.project_id)
+                out = await execute_steps(
+                    steps, env_base_url, execution_id, browser,
+                    component_resolver=_resolve_component, element_lookup=el_lookup,
+                )
+                res = out["results"]
             else:
                 res = [{"index": i, "keyword": s.get("keyword"), "target": s.get("target"), "value": s.get("value"),
                         "status": "skipped", "healed": False, "healed_locator": None,

@@ -1,9 +1,40 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { api } from "@/lib/api";
 import { useActiveProject } from "@/auth/ProjectContext";
-import { Plus, Save, Play, Trash2, GripVertical, FilePlus, Loader2, Settings, PackagePlus, Box, CheckSquare, Square } from "lucide-react";
-import ApiStepConfigModal from "@/components/ApiStepConfigModal";
+import { Plus, Save, Play, Trash2, FilePlus, Loader2, Box, MousePointer, Type, Globe, Clock, CheckCircle2, Cable, PackagePlus, CheckSquare, Square, Variable } from "lucide-react";
+import StepWizard from "@/components/StepWizard";
+
+const KIND_ICON = (kw) => {
+  if (kw === "click" || kw === "check" || kw === "select") return MousePointer;
+  if (kw === "type") return Type;
+  if (kw === "navigate") return Globe;
+  if (kw === "wait" || kw === "wait_for_element") return Clock;
+  if (kw?.startsWith("verify")) return CheckCircle2;
+  if (kw === "api_request") return Cable;
+  if (kw === "use_component") return Box;
+  return MousePointer;
+};
+
+function stepPlainEnglish(s) {
+  const k = s.keyword;
+  const cfg = s.config || {};
+  const el = cfg.element_name;
+  if (k === "click") return `Click on ${el || s.target || "element"}`;
+  if (k === "type") return `Type "${s.value || ""}" into ${el || s.target || "element"}`;
+  if (k === "verify_visible") return `Verify ${el || s.target || "element"} is visible`;
+  if (k === "verify_text") return `Verify ${el || s.target || "element"} contains "${s.value || ""}"`;
+  if (k === "select") return `Select "${s.value || ""}" in ${el || s.target || "dropdown"}`;
+  if (k === "check") return `Check ${el || s.target || "checkbox"}`;
+  if (k === "wait_for_element") return `Wait for ${el || s.target || "element"}`;
+  if (k === "navigate") return `Navigate to ${s.value || s.target}`;
+  if (k === "wait") return `Wait ${s.value || s.target || "1"} seconds`;
+  if (k === "verify_url") return `Verify URL contains "${s.value}"`;
+  if (k === "verify_title") return `Verify page title contains "${s.value}"`;
+  if (k === "api_request") return `${cfg.method || s.target || "GET"} ${cfg.url || s.value || ""}`;
+  if (k === "use_component") return `Run component "${cfg.component_name || s.target}"`;
+  return s.description || k;
+}
 
 export default function TestBuilderPage() {
   const [params, setParams] = useSearchParams();
@@ -12,7 +43,6 @@ export default function TestBuilderPage() {
   const tcId = params.get("tc") || "";
 
   const [testCases, setTestCases] = useState([]);
-  const [keywords, setKeywords] = useState([]);
   const [environments, setEnvironments] = useState([]);
   const [components, setComponents] = useState([]);
 
@@ -25,25 +55,14 @@ export default function TestBuilderPage() {
   const [running, setRunning] = useState(false);
   const [runMsg, setRunMsg] = useState("");
   const [envId, setEnvId] = useState("");
-
-  // selection + API modal state
-  const [selectedSteps, setSelectedSteps] = useState(new Set());
-  const [apiModal, setApiModal] = useState({ open: false, index: -1 });
+  const [wizardOpen, setWizardOpen] = useState(false);
+  const [selected, setSelected] = useState(new Set());
   const [extractDialog, setExtractDialog] = useState(false);
   const [extractName, setExtractName] = useState("");
-  const [extractReplace, setExtractReplace] = useState(true);
 
-  useEffect(() => {
-    (async () => {
-      const { data } = await api.get("/keywords");
-      setKeywords(data);
-    })();
-  }, []);
-
-  // If active project changes, clear the open test case (it belongs to another project)
   useEffect(() => {
     if (tcId) setParams({}, { replace: true });
-    setCurrent(null); setName(""); setDescription(""); setSteps([]);
+    setCurrent(null); setName(""); setDescription(""); setSteps([]); setSelected(new Set());
     // eslint-disable-next-line
   }, [activeId]);
 
@@ -66,39 +85,24 @@ export default function TestBuilderPage() {
       const { data } = await api.get(`/test-cases/${tcId}`);
       setCurrent(data); setName(data.name); setDescription(data.description || "");
       setType(data.type); setSteps(data.steps || []);
+      setSelected(new Set());
     })();
   }, [tcId]);
 
-  const grouped = useMemo(() => {
-    const g = {};
-    keywords.forEach((k) => { (g[k.category] ||= []).push(k); });
-    return g;
-  }, [keywords]);
-
-  const addStep = (kw) => {
-    if (kw.keyword === "api_request") {
-      setSteps((s) => [...s, { keyword: "api_request", target: "GET", value: "", description: "API request", config: { method: "GET", url: "", headers: {}, body: null, body_type: "json", assertions: [{ type: "status_code", operator: "equals", expected: 200 }] } }]);
-      // immediately open the modal for the new step
-      setTimeout(() => setApiModal({ open: true, index: steps.length }), 0);
-    } else {
-      setSteps((s) => [...s, { keyword: kw.keyword, target: "", value: "", description: kw.label }]);
-    }
-  };
-
-  const insertComponent = (comp) => {
-    setSteps((s) => [...s, { keyword: "use_component", target: comp.id, value: "", description: `Component: ${comp.name}`, config: { component_name: comp.name } }]);
-  };
-
-  const updateStep = (i, patch) => setSteps((s) => s.map((x, idx) => idx === i ? { ...x, ...patch } : x));
+  const addStep = (s) => { setSteps((cur) => [...cur, s]); setWizardOpen(false); };
   const removeStep = (i) => setSteps((s) => s.filter((_, idx) => idx !== i));
   const moveStep = (i, dir) => {
     const j = i + dir; if (j < 0 || j >= steps.length) return;
     const copy = [...steps]; [copy[i], copy[j]] = [copy[j], copy[i]]; setSteps(copy);
   };
 
-  const startNew = () => {
-    setParams({}); setCurrent(null); setName(""); setDescription(""); setType("web"); setSteps([]);
-  };
+  // Extracted variables across all api_request steps in the test case
+  const declaredVars = steps
+    .filter((s) => s.keyword === "api_request")
+    .flatMap((s) => (s.config?.extract || []).map((e) => e.name))
+    .filter(Boolean);
+
+  const startNew = () => { setParams({}); setCurrent(null); setName(""); setDescription(""); setType("web"); setSteps([]); setSelected(new Set()); };
 
   const save = async () => {
     if (!projectId) { setRunMsg("No active project."); return; }
@@ -110,8 +114,7 @@ export default function TestBuilderPage() {
         setCurrent(data); setRunMsg("Saved.");
       } else {
         const { data } = await api.post("/test-cases", { project_id: projectId, name, description, type, steps });
-        setCurrent(data); setParams({ tc: data.id });
-        setRunMsg("Created.");
+        setCurrent(data); setParams({ tc: data.id }); setRunMsg("Created.");
       }
       const t = await api.get(`/test-cases?project_id=${projectId}`); setTestCases(t.data);
     } catch (e) { setRunMsg(e?.response?.data?.detail || "Save failed"); }
@@ -122,18 +125,15 @@ export default function TestBuilderPage() {
     if (!current) { setRunMsg("Save first."); return; }
     setRunning(true); setRunMsg("");
     try {
-      const { data } = await api.post("/executions/run", {
-        test_case_id: current.id, environment_id: envId || null, browser: "chromium",
-      });
-      setRunMsg(`Execution queued: ${data.id.slice(0, 8)}. Go to Executions to view.`);
+      const { data } = await api.post("/executions/run", { test_case_id: current.id, environment_id: envId || null, browser: "chromium" });
+      setRunMsg(`Execution queued: ${data.id.slice(0, 8)}. Open Executions for live status.`);
     } catch (e) { setRunMsg(e?.response?.data?.detail || "Run failed"); }
     finally { setRunning(false); }
   };
 
   return (
     <div className="flex h-full">
-      {/* Left: Test case list + keywords */}
-      <aside className="w-64 border-r border-zinc-900 flex flex-col">
+      <aside className="w-60 border-r border-zinc-900 flex flex-col">
         <div className="p-3 border-b border-zinc-900 space-y-2">
           <div className="text-[10px] font-mono uppercase tracking-widest text-zinc-500">Active project</div>
           <div className="text-sm font-display tracking-tight" data-testid="tb-active-project">{active?.name || "—"}</div>
@@ -141,9 +141,9 @@ export default function TestBuilderPage() {
             <FilePlus className="w-3.5 h-3.5" /> New test case
           </button>
         </div>
-        <div className="p-3 border-b border-zinc-900">
+        <div className="p-3 flex-1 overflow-auto">
           <div className="text-[10px] font-mono uppercase tracking-widest text-zinc-500 mb-2">Test cases ({testCases.length})</div>
-          <div className="space-y-1 max-h-48 overflow-auto">
+          <div className="space-y-1">
             {testCases.map((t) => (
               <button key={t.id} data-testid={`tc-list-${t.id}`} onClick={() => setParams({ tc: t.id })}
                 className={`w-full text-left text-xs px-2 py-1.5 rounded-sm truncate ${tcId === t.id ? "bg-zinc-800 text-white" : "text-zinc-400 hover:bg-zinc-900"}`}>
@@ -153,53 +153,13 @@ export default function TestBuilderPage() {
             {testCases.length === 0 && <div className="text-[11px] text-zinc-600">No test cases yet.</div>}
           </div>
         </div>
-        <div className="p-3 flex-1 overflow-auto">
-          {/* Components */}
-          {components.length > 0 && (
-            <div className="mb-4">
-              <div className="flex items-center justify-between mb-1">
-                <div className="text-[10px] font-mono uppercase tracking-widest text-zinc-500">Components ({components.length})</div>
-              </div>
-              <div className="space-y-1">
-                {components.map((c) => (
-                  <button key={c.id} data-testid={`comp-${c.id}`} onClick={() => insertComponent(c)}
-                    className="w-full text-left text-xs px-2 py-1.5 bg-zinc-950 border border-amber-900/50 hover:border-amber-700 rounded-sm flex items-center justify-between">
-                    <span className="flex items-center gap-1.5"><Box className="w-3 h-3 text-amber-400" />{c.name}</span>
-                    <Plus className="w-3 h-3 text-zinc-600" />
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-          <div className="text-[10px] font-mono uppercase tracking-widest text-zinc-500 mb-2">Keywords</div>
-          {Object.entries(grouped).map(([cat, items]) => (
-            <div key={cat} className="mb-3">
-              <div className="text-[9px] font-mono uppercase tracking-widest text-zinc-600 mb-1">{cat}</div>
-              <div className="space-y-1">
-                {items.map((k) => (
-                  <button key={k.keyword} data-testid={`kw-${k.keyword}`} onClick={() => addStep(k)}
-                    className="w-full text-left text-xs px-2 py-1.5 bg-zinc-950 border border-zinc-800 hover:border-zinc-600 rounded-sm flex items-center justify-between">
-                    <span>{k.label}</span>
-                    <Plus className="w-3 h-3 text-zinc-600" />
-                  </button>
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
       </aside>
 
-      {/* Middle: steps */}
       <section className="flex-1 flex flex-col min-w-0">
         <div className="border-b border-zinc-900 p-4 space-y-2">
           <div className="flex items-center gap-2">
             <input data-testid="tc-name-input" value={name} onChange={(e) => setName(e.target.value)} placeholder="Test case name"
               className="flex-1 bg-transparent border-none focus:outline-none font-display text-2xl tracking-tight" />
-            <select data-testid="tc-type-select" value={type} onChange={(e) => setType(e.target.value)} disabled={!!current}
-              className="bg-zinc-900 border border-zinc-800 text-xs px-2 py-1 rounded-sm font-mono uppercase">
-              <option value="web">web</option><option value="api">api</option>
-              <option value="db">db</option><option value="visual">visual</option>
-            </select>
             <select data-testid="tc-env-select" value={envId} onChange={(e) => setEnvId(e.target.value)}
               className="bg-zinc-900 border border-zinc-800 text-xs px-2 py-1 rounded-sm font-mono uppercase">
               <option value="">No env</option>
@@ -216,139 +176,96 @@ export default function TestBuilderPage() {
           </div>
           <input data-testid="tc-desc-input" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Description (optional)"
             className="w-full bg-transparent border-none focus:outline-none text-sm text-zinc-400" />
-          {runMsg && <div className="text-xs text-amber-400 font-mono" data-testid="builder-message">{runMsg}</div>}
-          {selectedSteps.size > 0 && (
-            <div className="flex items-center gap-2 bg-zinc-900/50 border border-zinc-800 rounded-sm px-2 py-1.5 text-xs">
-              <span className="font-mono text-zinc-400">{selectedSteps.size} selected</span>
-              <button data-testid="extract-component-btn" onClick={() => { setExtractName(""); setExtractReplace(true); setExtractDialog(true); }} className="flex items-center gap-1 text-zinc-200 hover:text-white">
-                <PackagePlus className="w-3 h-3" /> Extract to reusable component
+          <div className="flex items-center gap-3 text-xs">
+            {runMsg && <div className="text-amber-400 font-mono" data-testid="builder-message">{runMsg}</div>}
+            {declaredVars.length > 0 && (
+              <div className="flex items-center gap-1.5 text-zinc-400" data-testid="declared-variables">
+                <Variable className="w-3 h-3" />
+                <span className="font-mono">Available variables: </span>
+                {declaredVars.map((v) => <span key={v} className="pill border-emerald-700 text-emerald-400">${"{"}{v}{"}"}</span>)}
+              </div>
+            )}
+            {selected.size > 0 && (
+              <button data-testid="extract-component-btn" onClick={() => { setExtractName(""); setExtractDialog(true); }} className="ml-auto flex items-center gap-1 border border-zinc-800 px-2 py-1 rounded-sm hover:bg-zinc-900">
+                <PackagePlus className="w-3 h-3" /> Extract {selected.size} step(s) to component
               </button>
-              <button onClick={() => setSelectedSteps(new Set())} className="ml-auto text-zinc-500 hover:text-white">Clear</button>
-            </div>
-          )}
+            )}
+          </div>
         </div>
 
         <div className="flex-1 overflow-auto p-4 space-y-2" data-testid="steps-container">
-          {steps.length === 0 && (
-            <div className="text-xs text-zinc-600 text-center py-12 border border-dashed border-zinc-800 rounded-sm">
-              No steps yet. Click a keyword on the left to add a step.
-            </div>
-          )}
           {steps.map((s, i) => {
-            const isApi = s.keyword === "api_request";
+            const Icon = KIND_ICON(s.keyword);
             const isComp = s.keyword === "use_component";
-            const checked = selectedSteps.has(i);
+            const isApi = s.keyword === "api_request";
+            const checked = selected.has(i);
             return (
-            <div key={i} className={`step-card group flex items-start gap-3 ${isComp ? "border-amber-900/60" : ""}`} data-testid={`step-row-${i}`}>
-              <button onClick={() => setSelectedSteps((s) => { const n = new Set(s); n.has(i) ? n.delete(i) : n.add(i); return n; })} className="text-zinc-500 hover:text-white mt-1" data-testid={`step-select-${i}`}>
-                {checked ? <CheckSquare className="w-4 h-4 text-white" /> : <Square className="w-4 h-4" />}
-              </button>
-              <div className="flex flex-col items-center pt-1 text-zinc-600">
-                <button onClick={() => moveStep(i, -1)} className="hover:text-white text-[10px]">▲</button>
-                <span className="font-mono text-[10px] py-0.5">{i + 1}</span>
-                <button onClick={() => moveStep(i, 1)} className="hover:text-white text-[10px]">▼</button>
-              </div>
-              <div className="flex-1 grid grid-cols-12 gap-2">
-                <div className="col-span-3">
-                  <div className="text-[9px] font-mono uppercase tracking-widest text-zinc-500">Keyword</div>
-                  <div className="font-mono text-sm text-white flex items-center gap-1.5">
-                    {isComp && <Box className="w-3 h-3 text-amber-400" />}
-                    {s.keyword}
-                  </div>
+              <div key={i} className={`step-card group flex items-start gap-3 ${isComp ? "border-amber-900/60" : isApi ? "border-blue-900/60" : ""}`} data-testid={`step-row-${i}`}>
+                <button onClick={() => setSelected(s => { const n = new Set(s); n.has(i) ? n.delete(i) : n.add(i); return n; })} className="text-zinc-500 hover:text-white mt-1" data-testid={`step-select-${i}`}>
+                  {checked ? <CheckSquare className="w-4 h-4 text-white" /> : <Square className="w-4 h-4" />}
+                </button>
+                <div className="flex flex-col items-center pt-1 text-zinc-600">
+                  <button onClick={() => moveStep(i, -1)} className="hover:text-white text-[10px]">▲</button>
+                  <span className="font-mono text-[10px] py-0.5">{i + 1}</span>
+                  <button onClick={() => moveStep(i, 1)} className="hover:text-white text-[10px]">▼</button>
                 </div>
-                {isApi ? (
-                  <div className="col-span-9 flex items-center gap-2">
-                    <div className="flex-1 min-w-0">
-                      <div className="text-[9px] font-mono uppercase tracking-widest text-zinc-500">Request</div>
-                      <div className="font-mono text-xs text-zinc-300 truncate">
-                        <span className="text-amber-300">{s.config?.method || s.target || "GET"}</span>{" "}
-                        {s.config?.url || s.value || "(no URL)"}
-                      </div>
-                      <div className="text-[10px] text-zinc-500 mt-0.5">{(s.config?.assertions || []).length} assertion(s)</div>
-                    </div>
-                    <button data-testid={`api-configure-${i}`} onClick={() => setApiModal({ open: true, index: i })} className="text-xs border border-zinc-700 px-2 py-1 rounded-sm flex items-center gap-1 hover:bg-zinc-900">
-                      <Settings className="w-3 h-3" /> Configure
-                    </button>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 text-sm">
+                    <Icon className="w-3.5 h-3.5 text-zinc-400" />
+                    <span className="text-zinc-100">{stepPlainEnglish(s)}</span>
                   </div>
-                ) : isComp ? (
-                  <div className="col-span-9">
-                    <div className="text-[9px] font-mono uppercase tracking-widest text-zinc-500">Component</div>
-                    <div className="font-mono text-xs text-zinc-300">
-                      {s.config?.component_name || components.find((c) => c.id === s.target)?.name || s.target}
+                  {isApi && (s.config?.extract || []).length > 0 && (
+                    <div className="text-[10px] font-mono text-emerald-400 mt-1">
+                      → extracts: {(s.config.extract || []).map((e) => `\${${e.name}}`).join(", ")}
                     </div>
-                  </div>
-                ) : (
-                  <>
-                    <div className="col-span-4">
-                      <div className="text-[9px] font-mono uppercase tracking-widest text-zinc-500">Target</div>
-                      <input data-testid={`step-target-${i}`} value={s.target || ""} onChange={(e) => updateStep(i, { target: e.target.value })}
-                        className="w-full bg-zinc-900 border border-zinc-800 rounded-sm px-2 py-1 text-xs font-mono focus:outline-none focus:border-zinc-500" />
-                    </div>
-                    <div className="col-span-5">
-                      <div className="text-[9px] font-mono uppercase tracking-widest text-zinc-500">Value</div>
-                      <input data-testid={`step-value-${i}`} value={s.value || ""} onChange={(e) => updateStep(i, { value: e.target.value })}
-                        className="w-full bg-zinc-900 border border-zinc-800 rounded-sm px-2 py-1 text-xs font-mono focus:outline-none focus:border-zinc-500" />
-                    </div>
-                  </>
-                )}
+                  )}
+                  {s.config?.page && (
+                    <div className="text-[10px] font-mono text-zinc-500 mt-0.5">on page: {s.config.page}</div>
+                  )}
+                </div>
+                <button data-testid={`step-delete-${i}`} onClick={() => removeStep(i)} className="text-zinc-600 hover:text-red-400 opacity-0 group-hover:opacity-100">
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
               </div>
-              <button data-testid={`step-delete-${i}`} onClick={() => removeStep(i)} className="text-zinc-600 hover:text-red-400 opacity-0 group-hover:opacity-100">
-                <Trash2 className="w-3.5 h-3.5" />
-              </button>
-            </div>
-          );})}
+            );
+          })}
+          <button data-testid="add-step-btn" onClick={() => setWizardOpen(true)}
+            className="w-full border border-dashed border-zinc-800 hover:border-zinc-500 rounded-sm p-4 text-sm text-zinc-400 hover:text-white flex items-center justify-center gap-2">
+            <Plus className="w-4 h-4" /> Add step
+          </button>
+          {steps.length === 0 && (
+            <div className="text-xs text-zinc-600 text-center py-2">Start by adding your first step.</div>
+          )}
         </div>
       </section>
 
-      <ApiStepConfigModal
-        open={apiModal.open}
-        initial={apiModal.index >= 0 ? steps[apiModal.index]?.config : null}
-        onCancel={() => setApiModal({ open: false, index: -1 })}
-        onSave={(cfg) => {
-          updateStep(apiModal.index, { config: cfg, target: cfg.method, value: cfg.url });
-          setApiModal({ open: false, index: -1 });
-        }}
-      />
+      <StepWizard open={wizardOpen} onClose={() => setWizardOpen(false)} onSave={addStep} components={components} />
 
       {extractDialog && (
         <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-6" data-testid="extract-dialog">
           <div className="bg-zinc-950 border border-zinc-800 rounded-sm w-full max-w-md">
             <div className="px-5 py-3 border-b border-zinc-900 font-display text-xl tracking-tight">Extract to reusable component</div>
             <div className="p-5 space-y-3">
-              <p className="text-xs text-zinc-500">Extracting {selectedSteps.size} step{selectedSteps.size === 1 ? "" : "s"} into a new component.</p>
-              <input autoFocus data-testid="extract-name" value={extractName} onChange={(e) => setExtractName(e.target.value)} placeholder="Component name (e.g. Login Flow)"
+              <p className="text-xs text-zinc-500">Extracting {selected.size} step{selected.size === 1 ? "" : "s"}.</p>
+              <input autoFocus data-testid="extract-name" value={extractName} onChange={(e) => setExtractName(e.target.value)} placeholder="Component name"
                 className="w-full bg-zinc-900 border border-zinc-800 text-sm px-3 py-2 rounded-sm" />
-              <label className="flex items-center gap-2 text-xs text-zinc-300">
-                <input type="checkbox" checked={extractReplace} onChange={(e) => setExtractReplace(e.target.checked)} />
-                Replace selected steps with a reference to the new component
-              </label>
             </div>
             <div className="px-5 py-3 border-t border-zinc-900 flex justify-end gap-2">
               <button onClick={() => setExtractDialog(false)} className="border border-zinc-800 px-3 py-1.5 text-sm rounded-sm">Cancel</button>
               <button data-testid="extract-confirm" disabled={!extractName || !current} onClick={async () => {
                 try {
                   await api.post("/components/extract-from-test-case", {
-                    test_case_id: current.id,
-                    name: extractName,
-                    step_indices: Array.from(selectedSteps),
-                    replace_with_reference: extractReplace,
+                    test_case_id: current.id, name: extractName,
+                    step_indices: Array.from(selected), replace_with_reference: true,
                   });
-                  // refresh
                   const [tc, comps] = await Promise.all([
                     api.get(`/test-cases/${current.id}`),
                     api.get(`/components?project_id=${projectId}`),
                   ]);
-                  setCurrent(tc.data); setSteps(tc.data.steps || []);
-                  setComponents(comps.data);
-                  setSelectedSteps(new Set());
-                  setExtractDialog(false);
-                  setRunMsg(`Component "${extractName}" created.`);
-                } catch (e) {
-                  setRunMsg(e?.response?.data?.detail || "Extract failed");
-                }
-              }} className="bg-white text-zinc-950 px-3 py-1.5 text-sm rounded-sm disabled:opacity-40">
-                Create component
-              </button>
+                  setCurrent(tc.data); setSteps(tc.data.steps || []); setComponents(comps.data);
+                  setSelected(new Set()); setExtractDialog(false); setRunMsg(`Component "${extractName}" created.`);
+                } catch (e) { setRunMsg(e?.response?.data?.detail || "Extract failed"); }
+              }} className="bg-white text-zinc-950 px-3 py-1.5 text-sm rounded-sm disabled:opacity-40">Create component</button>
             </div>
           </div>
         </div>

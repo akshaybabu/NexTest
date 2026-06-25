@@ -48,6 +48,7 @@ export default function ElementsPage() {
     setForm({
       name: el.name, page: el.page || "",
       primary_locator: el.primary_locator, locator_type: el.locator_type,
+      alternate_locators: el.alternate_locators || [],
     });
     setEditing(el);
     setShowNew(true);
@@ -58,19 +59,18 @@ export default function ElementsPage() {
     if (!active) { setMsg("No active project"); return; }
     if (!form.name || !form.primary_locator) { setMsg("Name and locator are required"); return; }
     try {
+      const payload = {
+        name: form.name, page: form.page,
+        primary_locator: form.primary_locator, locator_type: form.locator_type,
+        alternate_locators: form.alternate_locators || [],
+      };
       if (editing) {
-        await api.patch(`/elements/${editing.id}`, {
-          name: form.name, page: form.page,
-          primary_locator: form.primary_locator, locator_type: form.locator_type,
-        });
+        await api.patch(`/elements/${editing.id}`, payload);
       } else {
-        await api.post("/elements", {
-          project_id: active.id, name: form.name, page: form.page,
-          primary_locator: form.primary_locator, locator_type: form.locator_type,
-        });
+        await api.post("/elements", { project_id: active.id, ...payload });
       }
       setShowNew(false); setEditing(null);
-      setForm({ name: "", page: "", primary_locator: "", locator_type: "css" });
+      setForm({ name: "", page: "", primary_locator: "", locator_type: "css", alternate_locators: [] });
       load();
     } catch (e) { setMsg(e?.response?.data?.detail || "Save failed"); }
   };
@@ -163,18 +163,20 @@ export default function ElementsPage() {
               <th className="text-left px-4 py-2">Name</th>
               <th className="text-left px-4 py-2">Type</th>
               <th className="text-left px-4 py-2">Primary locator</th>
+              <th className="text-left px-4 py-2">Alternates</th>
               <th className="text-left px-4 py-2">Confidence</th>
               <th className="text-left px-4 py-2">Heals</th>
               <th />
             </tr>
           </thead>
           <tbody>
-            {pageItems.length === 0 && <tr><td colSpan={6} className="text-center text-zinc-600 py-6 text-xs">No elements on this page yet.</td></tr>}
+            {pageItems.length === 0 && <tr><td colSpan={7} className="text-center text-zinc-600 py-6 text-xs">No elements on this page yet.</td></tr>}
             {pageItems.map((e) => (
               <tr key={e.id} className="border-b border-zinc-900 hover:bg-zinc-900/40">
                 <td className="px-4 py-2 text-sm flex items-center gap-2"><Boxes className="w-3.5 h-3.5 text-zinc-500" />{e.name}</td>
                 <td className="px-4 py-2 text-xs font-mono">{e.locator_type}</td>
                 <td className="px-4 py-2 text-xs font-mono text-zinc-300 truncate max-w-xs">{e.primary_locator}</td>
+                <td className="px-4 py-2 text-xs font-mono text-zinc-400">{(e.alternate_locators || []).length}</td>
                 <td className="px-4 py-2 text-xs font-mono">
                   <span className={e.confidence > 0.7 ? "status-pass" : "status-running"}>{(e.confidence * 100).toFixed(0)}%</span>
                 </td>
@@ -195,6 +197,9 @@ export default function ElementsPage() {
 }
 
 function ElementForm({ form, setForm, pages, save, cancel, editing }) {
+  const addAlt = () => setForm({ ...form, alternate_locators: [...(form.alternate_locators || []), { locator: "", type: "css", weight: 0.5 }] });
+  const updAlt = (i, patch) => setForm({ ...form, alternate_locators: (form.alternate_locators || []).map((a, idx) => idx === i ? { ...a, ...patch } : a) });
+  const rmAlt = (i) => setForm({ ...form, alternate_locators: (form.alternate_locators || []).filter((_, idx) => idx !== i) });
   return (
     <div className="border border-zinc-800 rounded-sm p-4 bg-zinc-950/60 space-y-3" data-testid="element-form">
       <div className="flex items-center justify-between">
@@ -212,8 +217,30 @@ function ElementForm({ form, setForm, pages, save, cancel, editing }) {
           {LOC_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
         </select>
       </div>
-      <input data-testid="el-locator" placeholder='Primary locator (e.g. button[type="submit"])' value={form.primary_locator} onChange={(e) => setForm({ ...form, primary_locator: e.target.value })}
-        className="w-full bg-zinc-900 border border-zinc-800 text-sm font-mono px-3 py-2 rounded-sm" />
+      <div>
+        <div className="text-[10px] font-mono uppercase tracking-widest text-zinc-500 mb-1">Primary locator</div>
+        <input data-testid="el-locator" placeholder='button[type="submit"]' value={form.primary_locator} onChange={(e) => setForm({ ...form, primary_locator: e.target.value })}
+          className="w-full bg-zinc-900 border border-zinc-800 text-sm font-mono px-3 py-2 rounded-sm" />
+      </div>
+      <div>
+        <div className="text-[10px] font-mono uppercase tracking-widest text-zinc-500 mb-1">Alternate locators (with weight) — runner tries highest weight first</div>
+        {(form.alternate_locators || []).map((a, i) => (
+          <div key={i} className="flex gap-1 mb-1" data-testid={`el-alt-row-${i}`}>
+            <select value={a.type} onChange={(e) => updAlt(i, { type: e.target.value })} className="bg-zinc-900 border border-zinc-800 text-xs px-2 py-1.5 rounded-sm font-mono">
+              {LOC_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+            </select>
+            <input value={a.locator} onChange={(e) => updAlt(i, { locator: e.target.value })} placeholder="alternate locator" className="flex-1 bg-zinc-900 border border-zinc-800 text-xs font-mono px-2 py-1.5 rounded-sm" />
+            <div className="flex items-center gap-1">
+              <span className="text-[10px] font-mono text-zinc-500">weight</span>
+              <input type="number" step="0.05" min="0" max="1" value={a.weight ?? 0.5}
+                onChange={(e) => updAlt(i, { weight: Math.max(0, Math.min(1, parseFloat(e.target.value || 0))) })}
+                className="w-16 bg-zinc-900 border border-zinc-800 text-xs font-mono px-2 py-1.5 rounded-sm" />
+            </div>
+            <button onClick={() => rmAlt(i)} className="text-zinc-600 hover:text-red-400"><Trash2 className="w-3.5 h-3.5" /></button>
+          </div>
+        ))}
+        <button onClick={addAlt} className="text-xs text-zinc-400 hover:text-white flex items-center gap-1"><Plus className="w-3 h-3" /> Add alternate</button>
+      </div>
       <div className="flex gap-2">
         <button data-testid="el-save" onClick={save} className="bg-white text-zinc-950 px-3 py-1.5 text-sm rounded-sm flex items-center gap-1.5">
           <Save className="w-3.5 h-3.5" /> {editing ? "Save changes" : "Add"}
