@@ -36,6 +36,7 @@ from app.modules.execution.router import router as execution_router
 from app.modules.api_testing.router import router as api_testing_router
 from app.modules.reporting.router import router as reporting_router
 from app.modules.admin.router import router as admin_router
+from app.modules.test_data.router import router as test_data_router
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger("intratest")
@@ -116,6 +117,7 @@ api_router.include_router(execution_router)
 api_router.include_router(api_testing_router)
 api_router.include_router(reporting_router)
 api_router.include_router(admin_router)
+api_router.include_router(test_data_router)
 app.include_router(api_router)
 
 # Static screenshots

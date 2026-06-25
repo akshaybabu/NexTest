@@ -75,3 +75,14 @@ Enterprise intranet no-code/low-code test automation platform competing with ACC
 - Add CSV/PDF export to Reports.
 - Wire Visual Baseline workflow (back-end model + screenshot diff UI).
 - Add Jenkins + Slack notification connectors.
+
+## Update — 2026-01-25 (iteration 2)
+✅ **Test Data Management wired end-to-end:**
+- Backend `/api/test-data` CRUD with JSON / CSV / env types.
+- CSV file upload import (multipart) — each row → record for data-driven runs.
+- CSV export endpoint per record.
+- Random value generator (string / number / email / uuid).
+- Secure flag → values masked with `••••••` in list view; reveal-on-demand per record.
+- Frontend: full Test Data UI — project selector, table view, create/edit form (with JSON editor), CSV import card, random generator card, tips panel, secure masking + reveal toggle, edit/delete/export actions.
+
+✅ **Auth fix:** Switched frontend from cookie-based to Bearer-token auth (localStorage + axios Authorization header). Backend already supported both; the new flow eliminates SameSite/ingress cookie quirks. Cookies still set by the backend for direct API consumers; UI uses tokens. Cookies code path retained for future SSO/intranet deployment.
