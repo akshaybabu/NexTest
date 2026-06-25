@@ -1,0 +1,44 @@
+{
+  "summary": "Iteration 1 - Backend & Frontend e2e testing for IntraTest Studio. Backend: 28/28 pytest tests pass covering auth, projects (with auto-seeded 4 envs), keywords (16, all 9 categories), test-cases (CRUD + version increment), test-suites, elements, real HTTP api-tests/run, real Playwright web execution (queued -> passed with 5 steps), reports (summary/trend/flaky/recent), admin endpoints, and RBAC (qa_manager correctly blocked from POST /api/admin/users with 403). Frontend: login form, valid/invalid creds, dashboard stat cards, projects creation, Test Builder full flow (project-selector, kw-navigate, tc-name-input, tc-save-btn, tc-run-btn), API Testing real HTTP, Executions list+detail panel, and logout all work. Real Playwright execution observed via UI: 2 runs with 5/5 PASSED steps for seeded 'Open example.com and verify' test case.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Dashboard (chart container)", "issues": ["Recharts emits width(-1)/height(-1) warnings during initial render; transient, chart renders correctly but consider adding minHeight/minWidth on ResponsiveContainer wrapper"]}
+    ],
+    "spec_deviations": [
+      {"component": "AppLayout sidebar", "issue": "data-testid uses 'nav-builder' / 'nav-suites' / 'nav-testdata' instead of the requested 'nav-test-builder' / 'nav-test-suites' / 'nav-test-data'. Functionally fine and consistent within the codebase, but external test specs/docs should be aligned. Either update the spec or rename these three testids for consistency.", "selector": "[data-testid='nav-builder'], [data-testid='nav-suites'], [data-testid='nav-testdata']", "priority": "LOW"}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_intratest_backend.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "(Optional, LOW) Rename sidebar testids nav-builder -> nav-test-builder, nav-suites -> nav-test-suites, nav-testdata -> nav-test-data to match the published spec/docs. No functional impact.",
+    "(Optional) Add minHeight to Recharts ResponsiveContainer on Dashboard to avoid console warnings on first render."
+  ],
+  "critical_code_review_comments": [
+    "Seeding is idempotent and password is rotated on mismatch — good.",
+    "CORS uses regex .* with allow_credentials=True — fine for dev; for prod consider explicit origin allowlist.",
+    "Element model stores primary_locator as String(1000); locator_type is a separate column. Schema is clean; spec/payload in review_request was inaccurate (described as object).",
+    "Test cases version increment on PATCH works as intended.",
+    "Real Playwright web runner executes and persists screenshots; observed 5/5 passed for seeded smoke TC. Empty URL navigate keyword raises real Playwright error and step is marked FAILED — correct behaviour.",
+    "RBAC require_min_level dependency enforced (qa_manager=50 cannot create admin user requiring level>=80; verified 403)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_intratest_backend.py (created)",
+    "/app/backend/tests/__init__.py (created)"
+  ],
+  "success_rate": {"backend": "100% (28/28)", "frontend": "100% on tested flows (minor spec deviation on 3 nav testids)"},
+  "test_credentials": "admin@intratest.io / Admin@12345 (super_admin); qa@intratest.io / Qa@12345 (qa_manager) — both verified working",
+  "seed_data_creation": "Used existing seeded DEMO project; tests create TEST_-prefixed throwaway data and clean up after themselves. One leftover E2E_8349 project remains from the UI projects-create test (acceptable for next iteration).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend pytest suite at /app/backend/tests/test_intratest_backend.py runs against REACT_APP_BACKEND_URL through ingress, covers all major modules, supports xdist parallel execution. The web_execution test deliberately filters by exact TC name 'Open example.com and verify' to avoid race conditions with parallel test-case CRUD tests. UI is dark theme by design (do not flag contrast). Real Playwright executes ~5-30s for web tests. Sidebar testid mismatch (nav-builder vs nav-test-builder) is the only spec deviation found.",
+  "rca of the issue": "N/A - no functional bugs found. The two initial test failures during writing were test-script issues (wrong element payload shape and a parallel-test race condition picking up a 1-step ephemeral TC). Both fixed in the test script."
+}
