@@ -5,8 +5,7 @@ import { Plus, Play, Layers } from "lucide-react";
 
 export default function TestSuitesPage() {
   const { activeId } = useActiveProject();
-  const [projects, setProjects] = useState([]);
-  const [projectId, setProjectId] = useState(activeId || "");
+  const projectId = activeId || "";
   const [suites, setSuites] = useState([]);
   const [testCases, setTestCases] = useState([]);
   const [environments, setEnvironments] = useState([]);
@@ -16,8 +15,6 @@ export default function TestSuitesPage() {
   const [envId, setEnvId] = useState("");
   const [msg, setMsg] = useState("");
 
-  useEffect(() => { api.get("/projects").then((r) => setProjects(r.data)); }, []);
-  useEffect(() => { setProjectId(activeId || ""); }, [activeId]);
   useEffect(() => {
     if (!projectId) return;
     Promise.all([
@@ -50,10 +47,6 @@ export default function TestSuitesPage() {
           <h1 className="font-display text-4xl tracking-tighter mt-1">Test Suites</h1>
         </div>
         <div className="flex items-center gap-2">
-          <select data-testid="suites-project-select" value={projectId} onChange={(e) => setProjectId(e.target.value)} className="bg-zinc-900 border border-zinc-800 text-sm px-2 py-1.5 rounded-sm">
-            <option value="">Select project</option>
-            {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-          </select>
           <button data-testid="new-suite-btn" disabled={!projectId} onClick={() => setShowNew(true)} className="bg-white text-zinc-950 px-3 py-1.5 text-sm rounded-sm flex items-center gap-1.5 disabled:opacity-40">
             <Plus className="w-4 h-4" /> New Suite
           </button>

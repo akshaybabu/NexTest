@@ -13,8 +13,7 @@ const RANDOM_KINDS = ["string", "number", "email", "uuid"];
 
 export default function TestDataPage() {
   const { activeId } = useActiveProject();
-  const [projects, setProjects] = useState([]);
-  const [projectId, setProjectId] = useState(activeId || "");
+  const projectId = activeId || "";
   const [items, setItems] = useState([]);
   const [showNew, setShowNew] = useState(false);
   const [editing, setEditing] = useState(null);
@@ -27,11 +26,10 @@ export default function TestDataPage() {
   const [genResult, setGenResult] = useState("");
   const [msg, setMsg] = useState("");
 
-  useEffect(() => { api.get("/projects").then((r) => setProjects(r.data)); }, []);
-  useEffect(() => { setProjectId(activeId || ""); }, [activeId]);
   useEffect(() => {
     if (!projectId) { setItems([]); return; }
     refresh();
+    // eslint-disable-next-line
   }, [projectId]);
 
   const refresh = async () => {
@@ -131,10 +129,6 @@ export default function TestDataPage() {
           <p className="text-sm text-zinc-500 mt-2">JSON datasets, CSV rows, env overrides and secure values per project.</p>
         </div>
         <div className="flex gap-2">
-          <select data-testid="td-project-select" value={projectId} onChange={(e) => setProjectId(e.target.value)} className="bg-zinc-900 border border-zinc-800 text-sm px-2 py-1.5 rounded-sm">
-            <option value="">Select project</option>
-            {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-          </select>
           <button data-testid="new-test-data-btn" disabled={!projectId} onClick={() => { setShowNew(true); setEditing(null); setForm({ name: "", type: "json", is_secure: false, dataText: "{}" }); }} className="bg-white text-zinc-950 px-3 py-1.5 text-sm rounded-sm flex items-center gap-1.5 disabled:opacity-40">
             <Plus className="w-4 h-4" /> New record
           </button>

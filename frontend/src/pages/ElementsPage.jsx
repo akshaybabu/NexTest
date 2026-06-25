@@ -1,94 +1,224 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/api";
 import { useActiveProject } from "@/auth/ProjectContext";
-import { Boxes, Plus, Trash2 } from "lucide-react";
+import { Boxes, Plus, Trash2, Folder, ChevronLeft, Edit2, Save, X } from "lucide-react";
+
+const LOC_TYPES = ["css", "xpath", "id", "text", "role", "name", "placeholder"];
 
 export default function ElementsPage() {
-  const { activeId } = useActiveProject();
-  const [projects, setProjects] = useState([]);
-  const [projectId, setProjectId] = useState(activeId || "");
+  const { active } = useActiveProject();
   const [elements, setElements] = useState([]);
+  const [openPage, setOpenPage] = useState(null);
   const [showNew, setShowNew] = useState(false);
-  const [form, setForm] = useState({ name: "", page: "", primary_locator: "", locator_type: "css", alternate_locators: [] });
+  const [editing, setEditing] = useState(null);
+  const [form, setForm] = useState({ name: "", page: "", primary_locator: "", locator_type: "css" });
+  const [msg, setMsg] = useState("");
 
-  useEffect(() => { api.get("/projects").then(r => setProjects(r.data)); }, []);
-  useEffect(() => { setProjectId(activeId || ""); }, [activeId]);
-  useEffect(() => {
-    if (!projectId) return setElements([]);
-    api.get(`/elements?project_id=${projectId}`).then(r => setElements(r.data));
-  }, [projectId]);
-
-  const create = async () => {
-    await api.post("/elements", { project_id: projectId, ...form });
-    setForm({ name: "", page: "", primary_locator: "", locator_type: "css", alternate_locators: [] });
-    setShowNew(false);
-    const { data } = await api.get(`/elements?project_id=${projectId}`); setElements(data);
+  const load = async () => {
+    if (!active) return;
+    const { data } = await api.get(`/elements?project_id=${active.id}`);
+    setElements(data);
   };
-  const remove = async (id) => { await api.delete(`/elements/${id}`); setElements(es => es.filter(e => e.id !== id)); };
 
-  return (
-    <div className="p-6 space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <div className="text-[10px] font-mono uppercase tracking-[0.3em] text-zinc-500">Repository</div>
-          <h1 className="font-display text-4xl tracking-tighter mt-1">Elements</h1>
-        </div>
-        <div className="flex gap-2">
-          <select data-testid="elements-project-select" value={projectId} onChange={(e) => setProjectId(e.target.value)} className="bg-zinc-900 border border-zinc-800 text-sm px-2 py-1.5 rounded-sm">
-            <option value="">Select project</option>
-            {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-          </select>
-          <button data-testid="new-element-btn" disabled={!projectId} onClick={() => setShowNew(true)} className="bg-white text-zinc-950 px-3 py-1.5 text-sm rounded-sm flex items-center gap-1.5 disabled:opacity-40">
+  useEffect(() => { load(); /* eslint-disable-next-line */ }, [active?.id]);
+
+  const pages = useMemo(() => {
+    const groups = new Map();
+    for (const e of elements) {
+      const key = e.page || "Unsorted";
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(e);
+    }
+    return Array.from(groups.entries())
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([name, items]) => ({ name, items }));
+  }, [elements]);
+
+  const pageItems = openPage
+    ? (pages.find((p) => p.name === openPage)?.items || [])
+    : [];
+
+  const startNew = (page) => {
+    setForm({ name: "", page: page || openPage || "", primary_locator: "", locator_type: "css" });
+    setEditing(null);
+    setShowNew(true);
+  };
+
+  const startEdit = (el) => {
+    setForm({
+      name: el.name, page: el.page || "",
+      primary_locator: el.primary_locator, locator_type: el.locator_type,
+    });
+    setEditing(el);
+    setShowNew(true);
+  };
+
+  const save = async () => {
+    setMsg("");
+    if (!active) { setMsg("No active project"); return; }
+    if (!form.name || !form.primary_locator) { setMsg("Name and locator are required"); return; }
+    try {
+      if (editing) {
+        await api.patch(`/elements/${editing.id}`, {
+          name: form.name, page: form.page,
+          primary_locator: form.primary_locator, locator_type: form.locator_type,
+        });
+      } else {
+        await api.post("/elements", {
+          project_id: active.id, name: form.name, page: form.page,
+          primary_locator: form.primary_locator, locator_type: form.locator_type,
+        });
+      }
+      setShowNew(false); setEditing(null);
+      setForm({ name: "", page: "", primary_locator: "", locator_type: "css" });
+      load();
+    } catch (e) { setMsg(e?.response?.data?.detail || "Save failed"); }
+  };
+
+  const remove = async (el) => {
+    if (!window.confirm(`Delete "${el.name}"?`)) return;
+    await api.delete(`/elements/${el.id}`);
+    load();
+  };
+
+  // -------- folder view (pages) --------
+  if (!openPage) {
+    return (
+      <div className="p-6 space-y-4">
+        <div className="flex items-end justify-between">
+          <div>
+            <div className="text-[10px] font-mono uppercase tracking-[0.3em] text-zinc-500">Repository</div>
+            <h1 className="font-display text-4xl tracking-tighter mt-1">Elements</h1>
+            <p className="text-sm text-zinc-500 mt-2">Locators organised by page. Click a page to view its elements.</p>
+          </div>
+          <button data-testid="new-element-btn" onClick={() => startNew("")} className="bg-white text-zinc-950 px-3 py-1.5 text-sm rounded-sm flex items-center gap-1.5">
             <Plus className="w-4 h-4" /> Add element
           </button>
         </div>
+
+        {msg && <div className="text-xs text-amber-400 font-mono">{msg}</div>}
+
+        {showNew && (
+          <ElementForm form={form} setForm={setForm} pages={pages.map((p) => p.name)} save={save} cancel={() => { setShowNew(false); setEditing(null); }} editing={editing} />
+        )}
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4" data-testid="pages-grid">
+          {pages.length === 0 && (
+            <div className="col-span-full text-center text-xs text-zinc-600 py-12 border border-dashed border-zinc-800 rounded-sm">
+              No elements yet. Add your first one.
+            </div>
+          )}
+          {pages.map((p) => (
+            <button
+              key={p.name} data-testid={`page-folder-${p.name}`}
+              onClick={() => setOpenPage(p.name)}
+              className="text-left border border-zinc-800 rounded-sm p-5 bg-zinc-950/60 hover:border-zinc-500 transition-colors group"
+            >
+              <div className="flex items-start justify-between">
+                <Folder className="w-6 h-6 text-zinc-500 group-hover:text-amber-300" />
+                <span className="pill border-zinc-800 text-zinc-400">{p.items.length} {p.items.length === 1 ? "element" : "elements"}</span>
+              </div>
+              <div className="font-display text-2xl tracking-tight mt-3">{p.name}</div>
+              <div className="text-xs text-zinc-500 mt-1">
+                Avg confidence{" "}
+                <span className="font-mono">
+                  {(p.items.reduce((s, e) => s + (e.confidence || 0), 0) / p.items.length * 100).toFixed(0)}%
+                </span>
+                {p.items.some((e) => e.heal_count > 0) && (
+                  <> · <span className="font-mono text-amber-400">{p.items.reduce((s, e) => s + (e.heal_count || 0), 0)} heals</span></>
+                )}
+              </div>
+            </button>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  // -------- inside a page --------
+  return (
+    <div className="p-6 space-y-4">
+      <div className="flex items-center gap-3 text-sm">
+        <button data-testid="back-to-pages" onClick={() => setOpenPage(null)} className="text-zinc-400 hover:text-white flex items-center gap-1">
+          <ChevronLeft className="w-4 h-4" /> Pages
+        </button>
+        <span className="text-zinc-700">/</span>
+        <span className="font-display text-lg tracking-tight">{openPage}</span>
+        <span className="text-[10px] font-mono uppercase tracking-widest text-zinc-500 ml-auto">{pageItems.length} elements</span>
+        <button data-testid="add-element-in-page" onClick={() => startNew(openPage)} className="bg-white text-zinc-950 px-3 py-1.5 text-sm rounded-sm flex items-center gap-1.5">
+          <Plus className="w-4 h-4" /> Add element
+        </button>
       </div>
 
+      {msg && <div className="text-xs text-amber-400 font-mono">{msg}</div>}
+
       {showNew && (
-        <div className="border border-zinc-800 rounded-sm p-4 bg-zinc-950/60 space-y-2">
-          <div className="grid grid-cols-2 gap-2">
-            <input data-testid="el-name" placeholder="Name (e.g. Login Button)" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })}
-              className="bg-zinc-900 border border-zinc-800 text-sm px-3 py-2 rounded-sm" />
-            <input data-testid="el-page" placeholder="Page (e.g. Login)" value={form.page} onChange={(e) => setForm({ ...form, page: e.target.value })}
-              className="bg-zinc-900 border border-zinc-800 text-sm px-3 py-2 rounded-sm" />
-          </div>
-          <div className="grid grid-cols-3 gap-2">
-            <select value={form.locator_type} onChange={(e) => setForm({ ...form, locator_type: e.target.value })} className="bg-zinc-900 border border-zinc-800 text-sm px-3 py-2 rounded-sm">
-              <option value="css">css</option><option value="xpath">xpath</option><option value="id">id</option>
-              <option value="text">text</option><option value="role">role</option>
-            </select>
-            <input data-testid="el-locator" placeholder='Primary locator (e.g. button[type="submit"])' value={form.primary_locator} onChange={(e) => setForm({ ...form, primary_locator: e.target.value })}
-              className="col-span-2 bg-zinc-900 border border-zinc-800 text-sm font-mono px-3 py-2 rounded-sm" />
-          </div>
-          <div className="flex gap-2"><button data-testid="el-save" onClick={create} className="bg-white text-zinc-950 px-3 py-1.5 text-sm rounded-sm">Save</button>
-            <button onClick={() => setShowNew(false)} className="border border-zinc-800 px-3 py-1.5 text-sm rounded-sm">Cancel</button>
-          </div>
-        </div>
+        <ElementForm form={form} setForm={setForm} pages={pages.map((p) => p.name)} save={save} cancel={() => { setShowNew(false); setEditing(null); }} editing={editing} />
       )}
 
-      <div className="border border-zinc-800 rounded-sm bg-zinc-950/60 overflow-hidden" data-testid="elements-table">
+      <div className="border border-zinc-800 rounded-sm bg-zinc-950/60 overflow-hidden" data-testid="elements-in-page">
         <table className="w-full text-sm">
           <thead className="text-[10px] font-mono uppercase tracking-widest text-zinc-500">
             <tr className="border-b border-zinc-900">
-              <th className="text-left px-4 py-2">Name</th><th className="text-left px-4 py-2">Page</th>
-              <th className="text-left px-4 py-2">Type</th><th className="text-left px-4 py-2">Primary locator</th>
-              <th className="text-left px-4 py-2">Confidence</th><th className="text-left px-4 py-2">Heals</th><th /></tr>
+              <th className="text-left px-4 py-2">Name</th>
+              <th className="text-left px-4 py-2">Type</th>
+              <th className="text-left px-4 py-2">Primary locator</th>
+              <th className="text-left px-4 py-2">Confidence</th>
+              <th className="text-left px-4 py-2">Heals</th>
+              <th />
+            </tr>
           </thead>
           <tbody>
-            {elements.length === 0 && <tr><td colSpan={7} className="text-center text-zinc-600 py-6 text-xs">{projectId ? "No elements yet." : "Select a project."}</td></tr>}
-            {elements.map((e) => (
-              <tr key={e.id} className="border-b border-zinc-900">
+            {pageItems.length === 0 && <tr><td colSpan={6} className="text-center text-zinc-600 py-6 text-xs">No elements on this page yet.</td></tr>}
+            {pageItems.map((e) => (
+              <tr key={e.id} className="border-b border-zinc-900 hover:bg-zinc-900/40">
                 <td className="px-4 py-2 text-sm flex items-center gap-2"><Boxes className="w-3.5 h-3.5 text-zinc-500" />{e.name}</td>
-                <td className="px-4 py-2 text-xs text-zinc-400">{e.page || "—"}</td>
                 <td className="px-4 py-2 text-xs font-mono">{e.locator_type}</td>
                 <td className="px-4 py-2 text-xs font-mono text-zinc-300 truncate max-w-xs">{e.primary_locator}</td>
-                <td className="px-4 py-2 text-xs font-mono"><span className={e.confidence > 0.7 ? "status-pass" : "status-running"}>{(e.confidence * 100).toFixed(0)}%</span></td>
+                <td className="px-4 py-2 text-xs font-mono">
+                  <span className={e.confidence > 0.7 ? "status-pass" : "status-running"}>{(e.confidence * 100).toFixed(0)}%</span>
+                </td>
                 <td className="px-4 py-2 text-xs font-mono text-zinc-500">{e.heal_count}</td>
-                <td className="px-4 py-2 text-right"><button onClick={() => remove(e.id)} className="text-zinc-600 hover:text-red-400"><Trash2 className="w-3.5 h-3.5" /></button></td>
+                <td className="px-4 py-2 text-right">
+                  <div className="inline-flex items-center gap-2">
+                    <button onClick={() => startEdit(e)} className="text-zinc-500 hover:text-white" data-testid={`edit-element-${e.id}`}><Edit2 className="w-3.5 h-3.5" /></button>
+                    <button onClick={() => remove(e)} className="text-zinc-600 hover:text-red-400" data-testid={`delete-element-${e.id}`}><Trash2 className="w-3.5 h-3.5" /></button>
+                  </div>
+                </td>
               </tr>
             ))}
           </tbody>
         </table>
+      </div>
+    </div>
+  );
+}
+
+function ElementForm({ form, setForm, pages, save, cancel, editing }) {
+  return (
+    <div className="border border-zinc-800 rounded-sm p-4 bg-zinc-950/60 space-y-3" data-testid="element-form">
+      <div className="flex items-center justify-between">
+        <div className="font-display text-xl tracking-tight">{editing ? "Edit element" : "Add element"}</div>
+        <button onClick={cancel} className="text-zinc-500 hover:text-white"><X className="w-4 h-4" /></button>
+      </div>
+      <div className="grid grid-cols-12 gap-3">
+        <input data-testid="el-name" placeholder="Element name (e.g. Login Button)" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })}
+          className="col-span-6 bg-zinc-900 border border-zinc-800 text-sm px-3 py-2 rounded-sm" />
+        <input data-testid="el-page" placeholder="Page (e.g. Login)" value={form.page} onChange={(e) => setForm({ ...form, page: e.target.value })}
+          list="pages-suggestions" className="col-span-4 bg-zinc-900 border border-zinc-800 text-sm px-3 py-2 rounded-sm" />
+        <datalist id="pages-suggestions">{pages.map((p) => <option key={p} value={p} />)}</datalist>
+        <select value={form.locator_type} onChange={(e) => setForm({ ...form, locator_type: e.target.value })}
+          className="col-span-2 bg-zinc-900 border border-zinc-800 text-sm px-3 py-2 rounded-sm font-mono">
+          {LOC_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+        </select>
+      </div>
+      <input data-testid="el-locator" placeholder='Primary locator (e.g. button[type="submit"])' value={form.primary_locator} onChange={(e) => setForm({ ...form, primary_locator: e.target.value })}
+        className="w-full bg-zinc-900 border border-zinc-800 text-sm font-mono px-3 py-2 rounded-sm" />
+      <div className="flex gap-2">
+        <button data-testid="el-save" onClick={save} className="bg-white text-zinc-950 px-3 py-1.5 text-sm rounded-sm flex items-center gap-1.5">
+          <Save className="w-3.5 h-3.5" /> {editing ? "Save changes" : "Add"}
+        </button>
+        <button onClick={cancel} className="border border-zinc-800 px-3 py-1.5 text-sm rounded-sm">Cancel</button>
       </div>
     </div>
   );

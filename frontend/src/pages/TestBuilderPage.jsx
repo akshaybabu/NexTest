@@ -6,11 +6,10 @@ import { Plus, Save, Play, Trash2, GripVertical, FilePlus, Loader2 } from "lucid
 
 export default function TestBuilderPage() {
   const [params, setParams] = useSearchParams();
-  const { activeId } = useActiveProject();
-  const projectId = params.get("project") || activeId || "";
+  const { active, activeId } = useActiveProject();
+  const projectId = activeId || "";
   const tcId = params.get("tc") || "";
 
-  const [projects, setProjects] = useState([]);
   const [testCases, setTestCases] = useState([]);
   const [keywords, setKeywords] = useState([]);
   const [environments, setEnvironments] = useState([]);
@@ -27,16 +26,15 @@ export default function TestBuilderPage() {
 
   useEffect(() => {
     (async () => {
-      const [p, k] = await Promise.all([api.get("/projects"), api.get("/keywords")]);
-      setProjects(p.data); setKeywords(k.data);
+      const { data } = await api.get("/keywords");
+      setKeywords(data);
     })();
   }, []);
 
-  // If active project changes and no explicit project in URL, follow it
+  // If active project changes, clear the open test case (it belongs to another project)
   useEffect(() => {
-    if (!params.get("project") && activeId) {
-      setParams({ project: activeId }, { replace: true });
-    }
+    if (tcId) setParams({}, { replace: true });
+    setCurrent(null); setName(""); setDescription(""); setSteps([]);
     // eslint-disable-next-line
   }, [activeId]);
 
@@ -76,11 +74,11 @@ export default function TestBuilderPage() {
   };
 
   const startNew = () => {
-    setParams({ project: projectId }); setCurrent(null); setName(""); setDescription(""); setType("web"); setSteps([]);
+    setParams({}); setCurrent(null); setName(""); setDescription(""); setType("web"); setSteps([]);
   };
 
   const save = async () => {
-    if (!projectId) { setRunMsg("Pick a project first."); return; }
+    if (!projectId) { setRunMsg("No active project."); return; }
     if (!name) { setRunMsg("Enter a name."); return; }
     setSaving(true); setRunMsg("");
     try {
@@ -89,7 +87,7 @@ export default function TestBuilderPage() {
         setCurrent(data); setRunMsg("Saved.");
       } else {
         const { data } = await api.post("/test-cases", { project_id: projectId, name, description, type, steps });
-        setCurrent(data); setParams({ project: projectId, tc: data.id });
+        setCurrent(data); setParams({ tc: data.id });
         setRunMsg("Created.");
       }
       const t = await api.get(`/test-cases?project_id=${projectId}`); setTestCases(t.data);
@@ -114,12 +112,8 @@ export default function TestBuilderPage() {
       {/* Left: Test case list + keywords */}
       <aside className="w-64 border-r border-zinc-900 flex flex-col">
         <div className="p-3 border-b border-zinc-900 space-y-2">
-          <div className="text-[10px] font-mono uppercase tracking-widest text-zinc-500">Project</div>
-          <select data-testid="project-selector" value={projectId} onChange={(e) => setParams({ project: e.target.value })}
-            className="w-full bg-zinc-900 border border-zinc-800 text-sm px-2 py-1.5 rounded-sm">
-            <option value="">Select project</option>
-            {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-          </select>
+          <div className="text-[10px] font-mono uppercase tracking-widest text-zinc-500">Active project</div>
+          <div className="text-sm font-display tracking-tight" data-testid="tb-active-project">{active?.name || "—"}</div>
           <button data-testid="new-test-case-btn" onClick={startNew} className="w-full flex items-center gap-2 justify-center border border-zinc-800 text-xs py-1.5 rounded-sm hover:bg-zinc-900">
             <FilePlus className="w-3.5 h-3.5" /> New test case
           </button>
@@ -128,11 +122,12 @@ export default function TestBuilderPage() {
           <div className="text-[10px] font-mono uppercase tracking-widest text-zinc-500 mb-2">Test cases ({testCases.length})</div>
           <div className="space-y-1 max-h-48 overflow-auto">
             {testCases.map((t) => (
-              <button key={t.id} data-testid={`tc-list-${t.id}`} onClick={() => setParams({ project: projectId, tc: t.id })}
+              <button key={t.id} data-testid={`tc-list-${t.id}`} onClick={() => setParams({ tc: t.id })}
                 className={`w-full text-left text-xs px-2 py-1.5 rounded-sm truncate ${tcId === t.id ? "bg-zinc-800 text-white" : "text-zinc-400 hover:bg-zinc-900"}`}>
                 {t.name}
               </button>
             ))}
+            {testCases.length === 0 && <div className="text-[11px] text-zinc-600">No test cases yet.</div>}
           </div>
         </div>
         <div className="p-3 flex-1 overflow-auto">
