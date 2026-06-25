@@ -24,7 +24,9 @@ KEYWORDS = [
     {"category": "Verify", "keyword": "verify_title", "label": "Verify title", "params": ["value"], "description": "Assert page title contains"},
     {"category": "Verify", "keyword": "verify_visible", "label": "Verify visible", "params": ["target"], "description": "Assert element is visible"},
     # API
-    {"category": "API", "keyword": "api_request", "label": "API request", "params": ["target", "value"], "description": "Execute API request (use API tab)"},
+    {"category": "API", "keyword": "api_request", "label": "API request", "params": ["target", "value", "config"], "description": "Execute API request (configurable: method, URL, headers, body, assertions)"},
+    # Components
+    {"category": "Components", "keyword": "use_component", "label": "Use reusable component", "params": ["target"], "description": "Insert and execute a reusable component"},
     # Database
     {"category": "Database", "keyword": "db_query", "label": "DB query", "params": ["target", "value"], "description": "Run SQL query (configure DB)"},
     # Visual

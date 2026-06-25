@@ -12,7 +12,15 @@ from app.modules.auth.models import User
 from app.modules.project.models import (
     Execution, ExecutionStep, TestCase, TestSuite, Environment, Project
 )
+from app.modules.test_design.component_models import ReusableComponent
 from app.modules.web_runner.runner import execute_steps
+
+
+async def _resolve_component(component_id: str):
+    """Fetch a reusable component's steps for inline expansion."""
+    async with AsyncSessionLocal() as db:
+        c = (await db.execute(select(ReusableComponent).where(ReusableComponent.id == component_id))).scalar_one_or_none()
+        return (c.steps or []) if c else None
 
 router = APIRouter(prefix="/executions", tags=["executions"])
 
@@ -77,7 +85,7 @@ async def _run_test_case(execution_id: str, test_case_id: str, env_base_url: str
     results = []
     try:
         if tc.type == "web":
-            results = await execute_steps(tc.steps or [], env_base_url, execution_id, browser)
+            results = await execute_steps(tc.steps or [], env_base_url, execution_id, browser, component_resolver=_resolve_component)
         else:
             # For api/db/visual we just mark as not implemented in this orchestrator path
             results = [{"index": i, "keyword": s.get("keyword"), "target": s.get("target"), "value": s.get("value"),
@@ -140,7 +148,7 @@ async def _run_suite(execution_id: str, suite_id: str, env_base_url: str | None,
         total_steps += len(steps)
         try:
             if tc.type == "web":
-                res = await execute_steps(steps, env_base_url, execution_id, browser)
+                res = await execute_steps(steps, env_base_url, execution_id, browser, component_resolver=_resolve_component)
             else:
                 res = [{"index": i, "keyword": s.get("keyword"), "target": s.get("target"), "value": s.get("value"),
                         "status": "skipped", "healed": False, "healed_locator": None,

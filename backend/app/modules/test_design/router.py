@@ -19,6 +19,7 @@ class StepDef(BaseModel):
     value: str | None = None
     description: str | None = None
     expected: str | None = None
+    config: dict | None = None
 
 
 class TestCaseCreate(BaseModel):

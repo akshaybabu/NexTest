@@ -5,13 +5,14 @@ import { useActiveProject } from "@/auth/ProjectContext";
 import {
   LayoutDashboard, FolderKanban, Wrench, Layers, PlayCircle,
   BarChart3, Database, Boxes, Cable, ShieldCheck, Terminal, LogOut, Search,
-  ChevronDown, Repeat,
+  ChevronDown, Repeat, Box,
 } from "lucide-react";
 
 const NAV = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard, tid: "nav-dashboard" },
   { to: "/projects", label: "Projects", icon: FolderKanban, tid: "nav-projects" },
   { to: "/builder", label: "Test Builder", icon: Wrench, tid: "nav-test-builder" },
+  { to: "/components", label: "Components", icon: Box, tid: "nav-components" },
   { to: "/suites", label: "Test Suites", icon: Layers, tid: "nav-test-suites" },
   { to: "/executions", label: "Executions", icon: PlayCircle, tid: "nav-executions" },
   { to: "/api-testing", label: "API Testing", icon: Cable, tid: "nav-api-testing" },

@@ -1,9 +1,11 @@
 """Web automation runner using Playwright."""
 import asyncio
+import json
 import os
 import time
 import base64
 from pathlib import Path
+import httpx
 from playwright.async_api import async_playwright, TimeoutError as PWTimeoutError, Error as PWError
 
 SCREENSHOT_DIR = Path("/app/backend/storage/screenshots")
@@ -14,7 +16,6 @@ SELECTOR_TYPES = {"css", "xpath", "id", "text", "role", "name", "placeholder"}
 
 
 def _to_pw_selector(target: str, locator_type: str | None = None) -> str:
-    """Convert locator hint into a Playwright selector string."""
     if not target:
         return ""
     t = target.strip()
@@ -31,7 +32,7 @@ def _to_pw_selector(target: str, locator_type: str | None = None) -> str:
         return f"[placeholder=\"{t}\"]"
     if lt == "name":
         return f"[name=\"{t}\"]"
-    return t  # default CSS
+    return t
 
 
 async def _capture_shot(page, exec_id: str, idx: int) -> str | None:
@@ -44,8 +45,114 @@ async def _capture_shot(page, exec_id: str, idx: int) -> str | None:
         return None
 
 
-async def execute_steps(steps: list[dict], base_url: str | None, exec_id: str, browser_kind: str = "chromium", capture_on_failure: bool = True):
-    """Execute web test steps. Returns list of step results."""
+def _get_json_path(obj, path: str):
+    if not path or not path.startswith("$"):
+        path = "$." + (path or "")
+    parts = path.replace("[", ".").replace("]", "").split(".")
+    cur = obj
+    for p in parts[1:]:
+        if p == "":
+            continue
+        if isinstance(cur, list):
+            try: cur = cur[int(p)]
+            except (ValueError, IndexError): return None
+        elif isinstance(cur, dict):
+            cur = cur.get(p)
+        else:
+            return None
+    return cur
+
+
+def _eval_assertion(a: dict, status_code: int, rtime_ms: int, headers: dict, body):
+    try:
+        atype = a.get("type")
+        op = a.get("operator", "equals")
+        exp = a.get("expected")
+        if atype == "status_code":
+            actual = status_code
+        elif atype == "response_time_ms":
+            actual = rtime_ms
+        elif atype == "header":
+            actual = headers.get(a.get("path") or "", None)
+        elif atype == "json_path":
+            actual = _get_json_path(body, a.get("path") or "$")
+        elif atype == "body_contains":
+            return (str(exp) in (json.dumps(body) if not isinstance(body, str) else body)), None
+        else:
+            return False, f"Unknown assertion type: {atype}"
+        if op == "equals": passed = str(actual) == str(exp)
+        elif op == "not_equals": passed = str(actual) != str(exp)
+        elif op == "less_than": passed = float(actual) < float(exp)
+        elif op == "greater_than": passed = float(actual) > float(exp)
+        elif op == "contains": passed = str(exp) in str(actual)
+        else: return False, f"Unknown operator: {op}"
+        return passed, None if passed else f"expected {exp}, got {actual}"
+    except Exception as e:
+        return False, str(e)
+
+
+async def _run_api_step(step: dict, base_url: str | None):
+    cfg = step.get("config") or {}
+    method = (cfg.get("method") or step.get("target") or "GET").upper()
+    url = cfg.get("url") or step.get("value") or ""
+    if base_url and url and not url.startswith("http"):
+        url = base_url.rstrip("/") + "/" + url.lstrip("/")
+    headers = dict(cfg.get("headers") or {})
+    body = cfg.get("body")
+    body_type = cfg.get("body_type") or "json"
+    timeout_ms = cfg.get("timeout_ms") or 30000
+    assertions = cfg.get("assertions") or []
+    started = time.perf_counter()
+    try:
+        async with httpx.AsyncClient(timeout=timeout_ms / 1000, follow_redirects=True) as client:
+            kwargs = {"method": method, "url": url, "headers": headers}
+            if body is not None and method in ("POST", "PUT", "PATCH", "DELETE"):
+                if body_type == "json": kwargs["json"] = body
+                elif body_type == "form": kwargs["data"] = body
+                else: kwargs["content"] = str(body)
+            r = await client.request(**kwargs)
+            rtime_ms = int((time.perf_counter() - started) * 1000)
+            ctype = r.headers.get("content-type", "")
+            if "application/json" in ctype:
+                try: resp_body = r.json()
+                except Exception: resp_body = r.text
+            else:
+                resp_body = r.text[:50000]
+            if not assertions:
+                if 200 <= r.status_code < 400:
+                    return "passed", None
+                return "failed", f"HTTP {r.status_code}"
+            for a in assertions:
+                passed, msg = _eval_assertion(a, r.status_code, rtime_ms, dict(r.headers), resp_body)
+                if not passed:
+                    return "failed", f"{a.get('type')} {a.get('operator')} {a.get('expected')} -> {msg}"
+            return "passed", None
+    except Exception as e:
+        return "failed", f"{type(e).__name__}: {e}"
+
+
+async def execute_steps(steps, base_url, exec_id, browser_kind="chromium", capture_on_failure=True, component_resolver=None):
+    """Execute web test steps. component_resolver(component_id) -> list[step] | None."""
+    expanded = []  # (step, owner_component_id|None)
+
+    async def _expand(items, owner=None, depth=0):
+        if depth > 5:
+            return
+        for s in items:
+            if (s.get("keyword") or "").lower() == "use_component":
+                comp_id = s.get("target")
+                inner = None
+                if component_resolver and comp_id:
+                    inner = await component_resolver(comp_id)
+                if inner:
+                    await _expand(inner, owner=comp_id, depth=depth + 1)
+                else:
+                    expanded.append((s, owner))
+            else:
+                expanded.append((s, owner))
+
+    await _expand(steps)
+
     results = []
     async with async_playwright() as p:
         browser_launcher = getattr(p, browser_kind if browser_kind in ("chromium", "firefox", "webkit") else "chromium")
@@ -53,7 +160,7 @@ async def execute_steps(steps: list[dict], base_url: str | None, exec_id: str, b
         context = await browser.new_context(viewport={"width": 1280, "height": 720})
         page = await context.new_page()
 
-        for idx, step in enumerate(steps):
+        for idx, (step, owner_component) in enumerate(expanded):
             kw = (step.get("keyword") or "").lower().replace(" ", "_")
             target = step.get("target") or ""
             value = step.get("value") or ""
@@ -67,7 +174,7 @@ async def execute_steps(steps: list[dict], base_url: str | None, exec_id: str, b
 
             try:
                 if kw in ("open_browser", "open"):
-                    pass  # browser already open
+                    pass
                 elif kw in ("navigate", "go_to", "navigate_to_url", "open_url"):
                     url = value or target
                     if base_url and url and not url.startswith("http"):
@@ -78,7 +185,6 @@ async def execute_steps(steps: list[dict], base_url: str | None, exec_id: str, b
                     try:
                         await page.locator(sel).first.click(timeout=10000)
                     except PWError as primary_err:
-                        # self-healing attempt
                         alts = step.get("alternate_locators") or []
                         clicked = False
                         for alt in alts:
@@ -132,6 +238,11 @@ async def execute_steps(steps: list[dict], base_url: str | None, exec_id: str, b
                     await page.locator(sel).first.check(timeout=10000)
                 elif kw in ("screenshot",):
                     screenshot_url = await _capture_shot(page, exec_id, idx)
+                elif kw == "api_request":
+                    status, error = await _run_api_step(step, base_url)
+                elif kw == "use_component":
+                    status = "skipped"
+                    error = "Component not resolved"
                 else:
                     status = "skipped"
                     error = f"Unknown keyword: {step.get('keyword')}"
@@ -153,6 +264,7 @@ async def execute_steps(steps: list[dict], base_url: str | None, exec_id: str, b
                 "duration_ms": duration_ms,
                 "error_message": error,
                 "screenshot_url": screenshot_url,
+                "component_id": owner_component,
             })
             if status == "failed":
                 break

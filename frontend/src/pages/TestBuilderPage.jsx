@@ -2,7 +2,8 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { api } from "@/lib/api";
 import { useActiveProject } from "@/auth/ProjectContext";
-import { Plus, Save, Play, Trash2, GripVertical, FilePlus, Loader2 } from "lucide-react";
+import { Plus, Save, Play, Trash2, GripVertical, FilePlus, Loader2, Settings, PackagePlus, Box, CheckSquare, Square } from "lucide-react";
+import ApiStepConfigModal from "@/components/ApiStepConfigModal";
 
 export default function TestBuilderPage() {
   const [params, setParams] = useSearchParams();
@@ -13,8 +14,9 @@ export default function TestBuilderPage() {
   const [testCases, setTestCases] = useState([]);
   const [keywords, setKeywords] = useState([]);
   const [environments, setEnvironments] = useState([]);
+  const [components, setComponents] = useState([]);
 
-  const [current, setCurrent] = useState(null); // current test case being edited
+  const [current, setCurrent] = useState(null);
   const [steps, setSteps] = useState([]);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
@@ -23,6 +25,13 @@ export default function TestBuilderPage() {
   const [running, setRunning] = useState(false);
   const [runMsg, setRunMsg] = useState("");
   const [envId, setEnvId] = useState("");
+
+  // selection + API modal state
+  const [selectedSteps, setSelectedSteps] = useState(new Set());
+  const [apiModal, setApiModal] = useState({ open: false, index: -1 });
+  const [extractDialog, setExtractDialog] = useState(false);
+  const [extractName, setExtractName] = useState("");
+  const [extractReplace, setExtractReplace] = useState(true);
 
   useEffect(() => {
     (async () => {
@@ -41,11 +50,12 @@ export default function TestBuilderPage() {
   useEffect(() => {
     if (!projectId) return;
     (async () => {
-      const [t, e] = await Promise.all([
+      const [t, e, c] = await Promise.all([
         api.get(`/test-cases?project_id=${projectId}`),
         api.get(`/projects/${projectId}/environments`),
+        api.get(`/components?project_id=${projectId}`),
       ]);
-      setTestCases(t.data); setEnvironments(e.data);
+      setTestCases(t.data); setEnvironments(e.data); setComponents(c.data);
       if (e.data[0]) setEnvId(e.data[0].id);
     })();
   }, [projectId]);
@@ -65,7 +75,20 @@ export default function TestBuilderPage() {
     return g;
   }, [keywords]);
 
-  const addStep = (kw) => setSteps((s) => [...s, { keyword: kw.keyword, target: "", value: "", description: kw.label }]);
+  const addStep = (kw) => {
+    if (kw.keyword === "api_request") {
+      setSteps((s) => [...s, { keyword: "api_request", target: "GET", value: "", description: "API request", config: { method: "GET", url: "", headers: {}, body: null, body_type: "json", assertions: [{ type: "status_code", operator: "equals", expected: 200 }] } }]);
+      // immediately open the modal for the new step
+      setTimeout(() => setApiModal({ open: true, index: steps.length }), 0);
+    } else {
+      setSteps((s) => [...s, { keyword: kw.keyword, target: "", value: "", description: kw.label }]);
+    }
+  };
+
+  const insertComponent = (comp) => {
+    setSteps((s) => [...s, { keyword: "use_component", target: comp.id, value: "", description: `Component: ${comp.name}`, config: { component_name: comp.name } }]);
+  };
+
   const updateStep = (i, patch) => setSteps((s) => s.map((x, idx) => idx === i ? { ...x, ...patch } : x));
   const removeStep = (i) => setSteps((s) => s.filter((_, idx) => idx !== i));
   const moveStep = (i, dir) => {
@@ -131,6 +154,23 @@ export default function TestBuilderPage() {
           </div>
         </div>
         <div className="p-3 flex-1 overflow-auto">
+          {/* Components */}
+          {components.length > 0 && (
+            <div className="mb-4">
+              <div className="flex items-center justify-between mb-1">
+                <div className="text-[10px] font-mono uppercase tracking-widest text-zinc-500">Components ({components.length})</div>
+              </div>
+              <div className="space-y-1">
+                {components.map((c) => (
+                  <button key={c.id} data-testid={`comp-${c.id}`} onClick={() => insertComponent(c)}
+                    className="w-full text-left text-xs px-2 py-1.5 bg-zinc-950 border border-amber-900/50 hover:border-amber-700 rounded-sm flex items-center justify-between">
+                    <span className="flex items-center gap-1.5"><Box className="w-3 h-3 text-amber-400" />{c.name}</span>
+                    <Plus className="w-3 h-3 text-zinc-600" />
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
           <div className="text-[10px] font-mono uppercase tracking-widest text-zinc-500 mb-2">Keywords</div>
           {Object.entries(grouped).map(([cat, items]) => (
             <div key={cat} className="mb-3">
@@ -177,6 +217,15 @@ export default function TestBuilderPage() {
           <input data-testid="tc-desc-input" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Description (optional)"
             className="w-full bg-transparent border-none focus:outline-none text-sm text-zinc-400" />
           {runMsg && <div className="text-xs text-amber-400 font-mono" data-testid="builder-message">{runMsg}</div>}
+          {selectedSteps.size > 0 && (
+            <div className="flex items-center gap-2 bg-zinc-900/50 border border-zinc-800 rounded-sm px-2 py-1.5 text-xs">
+              <span className="font-mono text-zinc-400">{selectedSteps.size} selected</span>
+              <button data-testid="extract-component-btn" onClick={() => { setExtractName(""); setExtractReplace(true); setExtractDialog(true); }} className="flex items-center gap-1 text-zinc-200 hover:text-white">
+                <PackagePlus className="w-3 h-3" /> Extract to reusable component
+              </button>
+              <button onClick={() => setSelectedSteps(new Set())} className="ml-auto text-zinc-500 hover:text-white">Clear</button>
+            </div>
+          )}
         </div>
 
         <div className="flex-1 overflow-auto p-4 space-y-2" data-testid="steps-container">
@@ -185,8 +234,15 @@ export default function TestBuilderPage() {
               No steps yet. Click a keyword on the left to add a step.
             </div>
           )}
-          {steps.map((s, i) => (
-            <div key={i} className="step-card group flex items-start gap-3" data-testid={`step-row-${i}`}>
+          {steps.map((s, i) => {
+            const isApi = s.keyword === "api_request";
+            const isComp = s.keyword === "use_component";
+            const checked = selectedSteps.has(i);
+            return (
+            <div key={i} className={`step-card group flex items-start gap-3 ${isComp ? "border-amber-900/60" : ""}`} data-testid={`step-row-${i}`}>
+              <button onClick={() => setSelectedSteps((s) => { const n = new Set(s); n.has(i) ? n.delete(i) : n.add(i); return n; })} className="text-zinc-500 hover:text-white mt-1" data-testid={`step-select-${i}`}>
+                {checked ? <CheckSquare className="w-4 h-4 text-white" /> : <Square className="w-4 h-4" />}
+              </button>
               <div className="flex flex-col items-center pt-1 text-zinc-600">
                 <button onClick={() => moveStep(i, -1)} className="hover:text-white text-[10px]">▲</button>
                 <span className="font-mono text-[10px] py-0.5">{i + 1}</span>
@@ -195,26 +251,108 @@ export default function TestBuilderPage() {
               <div className="flex-1 grid grid-cols-12 gap-2">
                 <div className="col-span-3">
                   <div className="text-[9px] font-mono uppercase tracking-widest text-zinc-500">Keyword</div>
-                  <div className="font-mono text-sm text-white">{s.keyword}</div>
+                  <div className="font-mono text-sm text-white flex items-center gap-1.5">
+                    {isComp && <Box className="w-3 h-3 text-amber-400" />}
+                    {s.keyword}
+                  </div>
                 </div>
-                <div className="col-span-4">
-                  <div className="text-[9px] font-mono uppercase tracking-widest text-zinc-500">Target</div>
-                  <input data-testid={`step-target-${i}`} value={s.target || ""} onChange={(e) => updateStep(i, { target: e.target.value })}
-                    className="w-full bg-zinc-900 border border-zinc-800 rounded-sm px-2 py-1 text-xs font-mono focus:outline-none focus:border-zinc-500" />
-                </div>
-                <div className="col-span-5">
-                  <div className="text-[9px] font-mono uppercase tracking-widest text-zinc-500">Value</div>
-                  <input data-testid={`step-value-${i}`} value={s.value || ""} onChange={(e) => updateStep(i, { value: e.target.value })}
-                    className="w-full bg-zinc-900 border border-zinc-800 rounded-sm px-2 py-1 text-xs font-mono focus:outline-none focus:border-zinc-500" />
-                </div>
+                {isApi ? (
+                  <div className="col-span-9 flex items-center gap-2">
+                    <div className="flex-1 min-w-0">
+                      <div className="text-[9px] font-mono uppercase tracking-widest text-zinc-500">Request</div>
+                      <div className="font-mono text-xs text-zinc-300 truncate">
+                        <span className="text-amber-300">{s.config?.method || s.target || "GET"}</span>{" "}
+                        {s.config?.url || s.value || "(no URL)"}
+                      </div>
+                      <div className="text-[10px] text-zinc-500 mt-0.5">{(s.config?.assertions || []).length} assertion(s)</div>
+                    </div>
+                    <button data-testid={`api-configure-${i}`} onClick={() => setApiModal({ open: true, index: i })} className="text-xs border border-zinc-700 px-2 py-1 rounded-sm flex items-center gap-1 hover:bg-zinc-900">
+                      <Settings className="w-3 h-3" /> Configure
+                    </button>
+                  </div>
+                ) : isComp ? (
+                  <div className="col-span-9">
+                    <div className="text-[9px] font-mono uppercase tracking-widest text-zinc-500">Component</div>
+                    <div className="font-mono text-xs text-zinc-300">
+                      {s.config?.component_name || components.find((c) => c.id === s.target)?.name || s.target}
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <div className="col-span-4">
+                      <div className="text-[9px] font-mono uppercase tracking-widest text-zinc-500">Target</div>
+                      <input data-testid={`step-target-${i}`} value={s.target || ""} onChange={(e) => updateStep(i, { target: e.target.value })}
+                        className="w-full bg-zinc-900 border border-zinc-800 rounded-sm px-2 py-1 text-xs font-mono focus:outline-none focus:border-zinc-500" />
+                    </div>
+                    <div className="col-span-5">
+                      <div className="text-[9px] font-mono uppercase tracking-widest text-zinc-500">Value</div>
+                      <input data-testid={`step-value-${i}`} value={s.value || ""} onChange={(e) => updateStep(i, { value: e.target.value })}
+                        className="w-full bg-zinc-900 border border-zinc-800 rounded-sm px-2 py-1 text-xs font-mono focus:outline-none focus:border-zinc-500" />
+                    </div>
+                  </>
+                )}
               </div>
               <button data-testid={`step-delete-${i}`} onClick={() => removeStep(i)} className="text-zinc-600 hover:text-red-400 opacity-0 group-hover:opacity-100">
                 <Trash2 className="w-3.5 h-3.5" />
               </button>
             </div>
-          ))}
+          );})}
         </div>
       </section>
+
+      <ApiStepConfigModal
+        open={apiModal.open}
+        initial={apiModal.index >= 0 ? steps[apiModal.index]?.config : null}
+        onCancel={() => setApiModal({ open: false, index: -1 })}
+        onSave={(cfg) => {
+          updateStep(apiModal.index, { config: cfg, target: cfg.method, value: cfg.url });
+          setApiModal({ open: false, index: -1 });
+        }}
+      />
+
+      {extractDialog && (
+        <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-6" data-testid="extract-dialog">
+          <div className="bg-zinc-950 border border-zinc-800 rounded-sm w-full max-w-md">
+            <div className="px-5 py-3 border-b border-zinc-900 font-display text-xl tracking-tight">Extract to reusable component</div>
+            <div className="p-5 space-y-3">
+              <p className="text-xs text-zinc-500">Extracting {selectedSteps.size} step{selectedSteps.size === 1 ? "" : "s"} into a new component.</p>
+              <input autoFocus data-testid="extract-name" value={extractName} onChange={(e) => setExtractName(e.target.value)} placeholder="Component name (e.g. Login Flow)"
+                className="w-full bg-zinc-900 border border-zinc-800 text-sm px-3 py-2 rounded-sm" />
+              <label className="flex items-center gap-2 text-xs text-zinc-300">
+                <input type="checkbox" checked={extractReplace} onChange={(e) => setExtractReplace(e.target.checked)} />
+                Replace selected steps with a reference to the new component
+              </label>
+            </div>
+            <div className="px-5 py-3 border-t border-zinc-900 flex justify-end gap-2">
+              <button onClick={() => setExtractDialog(false)} className="border border-zinc-800 px-3 py-1.5 text-sm rounded-sm">Cancel</button>
+              <button data-testid="extract-confirm" disabled={!extractName || !current} onClick={async () => {
+                try {
+                  await api.post("/components/extract-from-test-case", {
+                    test_case_id: current.id,
+                    name: extractName,
+                    step_indices: Array.from(selectedSteps),
+                    replace_with_reference: extractReplace,
+                  });
+                  // refresh
+                  const [tc, comps] = await Promise.all([
+                    api.get(`/test-cases/${current.id}`),
+                    api.get(`/components?project_id=${projectId}`),
+                  ]);
+                  setCurrent(tc.data); setSteps(tc.data.steps || []);
+                  setComponents(comps.data);
+                  setSelectedSteps(new Set());
+                  setExtractDialog(false);
+                  setRunMsg(`Component "${extractName}" created.`);
+                } catch (e) {
+                  setRunMsg(e?.response?.data?.detail || "Extract failed");
+                }
+              }} className="bg-white text-zinc-950 px-3 py-1.5 text-sm rounded-sm disabled:opacity-40">
+                Create component
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

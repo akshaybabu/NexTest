@@ -9,6 +9,7 @@ import DashboardPage from "@/pages/DashboardPage";
 import ProjectsPage from "@/pages/ProjectsPage";
 import TestBuilderPage from "@/pages/TestBuilderPage";
 import TestSuitesPage from "@/pages/TestSuitesPage";
+import ComponentsPage from "@/pages/ComponentsPage";
 import ExecutionsPage from "@/pages/ExecutionsPage";
 import ReportsPage from "@/pages/ReportsPage";
 import ApiTestingPage from "@/pages/ApiTestingPage";
@@ -55,6 +56,7 @@ export default function App() {
               <Route path="/projects" element={<ProjectsPage />} />
               <Route path="/builder" element={<TestBuilderPage />} />
               <Route path="/suites" element={<TestSuitesPage />} />
+              <Route path="/components" element={<ComponentsPage />} />
               <Route path="/executions" element={<ExecutionsPage />} />
               <Route path="/reports" element={<ReportsPage />} />
               <Route path="/api-testing" element={<ApiTestingPage />} />

@@ -25,12 +25,14 @@ from app.modules.project.models import (  # noqa: F401
     Project, Environment, Element, TestCase, TestSuite,
     Execution, ExecutionStep, TestData, Integration,
 )
+from app.modules.test_design.component_models import ReusableComponent  # noqa: F401
 
 # Routers
 from app.modules.auth.router import router as auth_router
 from app.modules.project.router import router as project_router
 from app.modules.test_design.router import router as test_design_router
 from app.modules.test_design.keywords import router as keywords_router
+from app.modules.test_design.components_router import router as components_router
 from app.modules.element.router import router as element_router
 from app.modules.execution.router import router as execution_router
 from app.modules.api_testing.router import router as api_testing_router
@@ -112,6 +114,7 @@ api_router.include_router(auth_router)
 api_router.include_router(project_router)
 api_router.include_router(test_design_router)
 api_router.include_router(keywords_router)
+api_router.include_router(components_router)
 api_router.include_router(element_router)
 api_router.include_router(execution_router)
 api_router.include_router(api_testing_router)
