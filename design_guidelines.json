@@ -1,0 +1,98 @@
+{
+  "theme": "dark",
+  "archetype": "4 (Swiss & High-Contrast)",
+  "design_philosophy": {
+    "core_principles": [
+      "Monochrome dominance: 95% of UI is black, white, and gray. Color is strictly reserved for status (Pass/Fail) and primary active states.",
+      "Grid Borders: Expose the skeleton. Use 1px sharp borders to separate dense information panels.",
+      "High Density: Control Room layout. Minimal padding where data matters, generous padding in hero/empty states.",
+      "Typography as UI: Use JetBrains Mono for all testing data, tags, and locators to feel like a pro developer tool."
+    ]
+  },
+  "typography": {
+    "primary_font_headings": "Outfit",
+    "secondary_font_body": "Satoshi",
+    "mono_font": "JetBrains Mono",
+    "banned_fonts": ["Inter", "Roboto", "Open Sans"],
+    "sizing": {
+      "h1": "text-4xl sm:text-5xl tracking-tighter font-medium",
+      "h2": "text-2xl sm:text-3xl tracking-tight font-medium",
+      "h3": "text-xl sm:text-2xl tracking-tight",
+      "body": "text-sm",
+      "labels": "text-xs tracking-[0.2em] uppercase font-mono"
+    }
+  },
+  "colors": {
+    "background": "#09090B",
+    "surface": "#121214",
+    "surface_hover": "#18181B",
+    "border": "#27272A",
+    "text_primary": "#FAFAFA",
+    "text_secondary": "#A1A1AA",
+    "primary_cta": {
+      "bg": "#FAFAFA",
+      "text": "#09090B",
+      "hover": "#E4E4E7"
+    },
+    "semantic": {
+      "pass": "#4ADE80",
+      "fail": "#F87171",
+      "running": "#FACC15",
+      "info": "#60A5FA"
+    }
+  },
+  "spacing_and_layout": {
+    "strategy": "Control Room Grid",
+    "gap": "gap-4",
+    "padding_standard": "p-4",
+    "padding_dense": "p-2",
+    "radius": "rounded-sm",
+    "borders": "1px solid border-border (Technical grid look)",
+    "shadows": "None. Rely on 1px borders and slight background shifts."
+  },
+  "surface_strategies": {
+    "cards": "Flat background, 1px subtle border (border-zinc-800), no shadow.",
+    "headers": "Solid Background with a hard bottom border.",
+    "modals": "Glassmorphism (Crystal/Apple variant): bg-black/60 backdrop-blur-2xl border border-white/10"
+  },
+  "components": {
+    "strategy": "Use pure HTML + Tailwind for structural layouts. Heavily customize Shadcn UI for forms, dialogs, dropdowns, and tabs.",
+    "icons": "lucide-react",
+    "mandatory_attributes": ["data-testid on all interactive and informational elements"]
+  },
+  "pages": {
+    "login": {
+      "layout": "Split screen or central card with geometric abstract background.",
+      "background_image": "https://images.unsplash.com/photo-1498262257252-c282316270bc?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAzMzJ8MHwxfHNlYXJjaHwyfHxhYnN0cmFjdCUyMGdlb21ldHJpYyUyMGdyaWQlMjBsaW5lcyUyMGFyY2hpdGVjdHVyZXxlbnwwfHx8fDE3ODI0MTc4MzZ8MA&ixlib=rb-4.1.0&q=85",
+      "notes": "Use a dark overlay (bg-black/80) over the background image to ensure text contrast. The login form should be a crisp, border-lined card."
+    },
+    "dashboard": {
+      "layout": "Left sidebar nav. Top sticky header for breadcrumbs and user profile. Main area: Bento grid of metrics (Pass rate, Flaky tests, Executions).",
+      "notes": "Dense data layout. Use recharts with monochrome grids and semantic line colors (green/red)."
+    },
+    "test_builder": {
+      "layout": "Three-pane layout. Left: Locators/Elements. Middle: Drag-and-drop steps (plain English). Right: Properties/Data bindings.",
+      "notes": "Steps should resemble code blocks but be visual cards. Use JetBrains Mono for variable names."
+    }
+  },
+  "media": {
+    "abstract_backgrounds": [
+      "https://images.unsplash.com/photo-1498262257252-c282316270bc?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAzMzJ8MHwxfHNlYXJjaHwyfHxhYnN0cmFjdCUyMGdlb21ldHJpYyUyMGdyaWQlMjBsaW5lcyUyMGFyY2hpdGVjdHVyZXxlbnwwfHx8fDE3ODI0MTc4MzZ8MA&ixlib=rb-4.1.0&q=85",
+      "https://images.pexels.com/photos/32933031/pexels-photo-32933031.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940"
+    ],
+    "user_avatars": [
+      "https://images.unsplash.com/photo-1560250097-0b93528c311a?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NDk1Nzl8MHwxfHNlYXJjaHwxfHxjb3Jwb3JhdGUlMjB1c2VyJTIwYXZhdGFyJTIwcG9ydHJhaXR8ZW58MHx8fHwxNzgyNDE3ODM2fDA&ixlib=rb-4.1.0&q=85",
+      "https://images.unsplash.com/photo-1607746882042-944635dfe10e?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NDk1Nzl8MHwxfHNlYXJjaHwzfHxjb3Jwb3JhdGUlMjB1c2VyJTIwYXZhdGFyJTIwcG9ydHJhaXR8ZW58MHx8fHwxNzgyNDE3ODM2fDA&ixlib=rb-4.1.0&q=85"
+    ]
+  },
+  "instructions_to_main_agent": [
+    "Install and configure Outfit, Satoshi, and JetBrains Mono via Google Fonts.",
+    "Do NOT use Inter, Roboto, or Open Sans for any text.",
+    "Set the Tailwind base colors to the zinc scale defined.",
+    "Ensure all buttons, inputs, links, and key metric displays have data-testid attributes for testing.",
+    "Construct the left sidebar nav with lucide-react icons.",
+    "Apply the 'Grid Borders' layout for the Dashboard: tables and metric cards should have crisp 1px borders with border-zinc-800.",
+    "Use standard Shadcn components but override their border-radius to rounded-sm and remove soft shadows.",
+    "Use the abstract architecture images for the Login screen background with a heavy bg-black/80 overlay to ensure text contrast."
+  ]
+}
