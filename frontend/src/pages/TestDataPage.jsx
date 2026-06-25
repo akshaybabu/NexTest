@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { api, API_BASE, getAuthToken } from "@/lib/api";
+import { useActiveProject } from "@/auth/ProjectContext";
 import { Database, Plus, Trash2, Eye, EyeOff, Download, Upload, Sparkles, Save, X } from "lucide-react";
 
 const TYPES = [
@@ -11,8 +12,9 @@ const TYPES = [
 const RANDOM_KINDS = ["string", "number", "email", "uuid"];
 
 export default function TestDataPage() {
+  const { activeId } = useActiveProject();
   const [projects, setProjects] = useState([]);
-  const [projectId, setProjectId] = useState("");
+  const [projectId, setProjectId] = useState(activeId || "");
   const [items, setItems] = useState([]);
   const [showNew, setShowNew] = useState(false);
   const [editing, setEditing] = useState(null);
@@ -26,6 +28,7 @@ export default function TestDataPage() {
   const [msg, setMsg] = useState("");
 
   useEffect(() => { api.get("/projects").then((r) => setProjects(r.data)); }, []);
+  useEffect(() => { setProjectId(activeId || ""); }, [activeId]);
   useEffect(() => {
     if (!projectId) { setItems([]); return; }
     refresh();

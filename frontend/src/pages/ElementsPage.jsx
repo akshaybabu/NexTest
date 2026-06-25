@@ -1,15 +1,18 @@
 import React, { useEffect, useState } from "react";
 import { api } from "@/lib/api";
+import { useActiveProject } from "@/auth/ProjectContext";
 import { Boxes, Plus, Trash2 } from "lucide-react";
 
 export default function ElementsPage() {
+  const { activeId } = useActiveProject();
   const [projects, setProjects] = useState([]);
-  const [projectId, setProjectId] = useState("");
+  const [projectId, setProjectId] = useState(activeId || "");
   const [elements, setElements] = useState([]);
   const [showNew, setShowNew] = useState(false);
   const [form, setForm] = useState({ name: "", page: "", primary_locator: "", locator_type: "css", alternate_locators: [] });
 
   useEffect(() => { api.get("/projects").then(r => setProjects(r.data)); }, []);
+  useEffect(() => { setProjectId(activeId || ""); }, [activeId]);
   useEffect(() => {
     if (!projectId) return setElements([]);
     api.get(`/elements?project_id=${projectId}`).then(r => setElements(r.data));

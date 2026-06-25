@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { api } from "@/lib/api";
+import { useActiveProject } from "@/auth/ProjectContext";
 import { useNavigate } from "react-router-dom";
 import { Loader2, RefreshCcw } from "lucide-react";
 
@@ -9,23 +10,24 @@ const statusColor = (s) => ({
 }[s] || "");
 
 export default function ExecutionsPage() {
+  const { active } = useActiveProject();
   const [execs, setExecs] = useState([]);
-  const [active, setActive] = useState(null);
+  const [selected, setSelected] = useState(null);
   const [steps, setSteps] = useState([]);
   const [loading, setLoading] = useState(false);
 
   const load = async () => {
-    const { data } = await api.get("/executions");
+    const qs = active ? `?project_id=${active.id}` : "";
+    const { data } = await api.get("/executions" + qs);
     setExecs(data);
   };
-  useEffect(() => { load(); const i = setInterval(load, 4000); return () => clearInterval(i); }, []);
+  useEffect(() => { load(); const i = setInterval(load, 4000); return () => clearInterval(i); }, [active?.id]);
 
   const open = async (e) => {
-    setActive(e); setLoading(true);
+    setSelected(e); setLoading(true);
     const { data } = await api.get(`/executions/${e.id}/steps`);
     setSteps(data); setLoading(false);
   };
-
   return (
     <div className="p-6 space-y-4">
       <div className="flex items-center justify-between">
@@ -54,7 +56,7 @@ export default function ExecutionsPage() {
             <tbody data-testid="executions-table">
               {execs.length === 0 && <tr><td colSpan={5} className="text-center text-zinc-600 py-6 text-xs">No executions.</td></tr>}
               {execs.map((e) => (
-                <tr key={e.id} data-testid={`execution-row-${e.id}`} onClick={() => open(e)} className={`border-b border-zinc-900 cursor-pointer hover:bg-zinc-900/40 ${active?.id === e.id ? "bg-zinc-900/60" : ""}`}>
+                <tr key={e.id} data-testid={`execution-row-${e.id}`} onClick={() => open(e)} className={`border-b border-zinc-900 cursor-pointer hover:bg-zinc-900/40 ${selected?.id === e.id ? "bg-zinc-900/60" : ""}`}>
                   <td className="px-3 py-2 font-mono text-xs text-zinc-400">{e.id.slice(0, 8)}</td>
                   <td className={`px-3 py-2 text-xs font-mono uppercase ${statusColor(e.status)}`}>{e.status}</td>
                   <td className="px-3 py-2 text-xs font-mono">{e.passed_steps}/{e.total_steps}</td>
@@ -69,12 +71,12 @@ export default function ExecutionsPage() {
         <div className="border border-zinc-800 rounded-sm bg-zinc-950/60">
           <div className="px-4 py-2 border-b border-zinc-900 flex items-center justify-between">
             <div className="text-[10px] font-mono uppercase tracking-widest text-zinc-500">Step details</div>
-            {active && <div className="text-xs font-mono text-zinc-400">{active.id.slice(0, 8)} · {active.duration_ms}ms</div>}
+            {selected && <div className="text-xs font-mono text-zinc-400">{selected.id.slice(0, 8)} · {selected.duration_ms}ms</div>}
           </div>
           <div className="p-3 max-h-[600px] overflow-auto">
-            {!active && <div className="text-xs text-zinc-600 text-center py-12">Select a run to view steps.</div>}
+            {!selected && <div className="text-xs text-zinc-600 text-center py-12">Select a run to view steps.</div>}
             {loading && <div className="flex items-center justify-center py-6 text-zinc-500"><Loader2 className="w-4 h-4 animate-spin" /></div>}
-            {!loading && active && steps.map((s) => (
+            {!loading && selected && steps.map((s) => (
               <div key={s.id} className="step-card mb-2" data-testid={`exec-step-${s.step_index}`}>
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">

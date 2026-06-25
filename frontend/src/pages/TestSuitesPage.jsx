@@ -1,10 +1,12 @@
 import React, { useEffect, useState } from "react";
 import { api } from "@/lib/api";
+import { useActiveProject } from "@/auth/ProjectContext";
 import { Plus, Play, Layers } from "lucide-react";
 
 export default function TestSuitesPage() {
+  const { activeId } = useActiveProject();
   const [projects, setProjects] = useState([]);
-  const [projectId, setProjectId] = useState("");
+  const [projectId, setProjectId] = useState(activeId || "");
   const [suites, setSuites] = useState([]);
   const [testCases, setTestCases] = useState([]);
   const [environments, setEnvironments] = useState([]);
@@ -15,6 +17,7 @@ export default function TestSuitesPage() {
   const [msg, setMsg] = useState("");
 
   useEffect(() => { api.get("/projects").then((r) => setProjects(r.data)); }, []);
+  useEffect(() => { setProjectId(activeId || ""); }, [activeId]);
   useEffect(() => {
     if (!projectId) return;
     Promise.all([

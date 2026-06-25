@@ -3,6 +3,7 @@ import { api } from "@/lib/api";
 import { Activity, CheckCircle2, XCircle, Loader2, FolderKanban, ListChecks, Sparkles } from "lucide-react";
 import { Link } from "react-router-dom";
 import { LineChart, Line, XAxis, YAxis, ResponsiveContainer, Tooltip, CartesianGrid } from "recharts";
+import { useActiveProject } from "@/auth/ProjectContext";
 
 const StatCard = ({ label, value, icon: Icon, color = "text-white", testId }) => (
   <div data-testid={testId} className="border border-zinc-800 rounded-sm p-4 bg-zinc-950/60">
@@ -20,6 +21,7 @@ const statusColor = (s) => ({
 }[s] || "");
 
 export default function DashboardPage() {
+  const { active } = useActiveProject();
   const [summary, setSummary] = useState(null);
   const [trend, setTrend] = useState([]);
   const [recent, setRecent] = useState([]);
@@ -27,19 +29,28 @@ export default function DashboardPage() {
 
   useEffect(() => {
     (async () => {
+      const qs = active ? `?project_id=${active.id}` : "";
       const [s, t, r, f] = await Promise.all([
-        api.get("/reports/summary"), api.get("/reports/trend"),
-        api.get("/reports/recent"), api.get("/reports/flaky"),
+        api.get("/reports/summary" + qs), api.get("/reports/trend" + qs),
+        api.get("/reports/recent" + qs), api.get("/reports/flaky" + qs),
       ]);
       setSummary(s.data); setTrend(t.data); setRecent(r.data); setFlaky(f.data);
     })();
-  }, []);
+  }, [active]);
 
   return (
     <div className="p-6 space-y-6 grid-bg min-h-full">
-      <div>
-        <div className="text-[10px] font-mono uppercase tracking-[0.3em] text-zinc-500">Overview</div>
-        <h1 className="font-display text-4xl tracking-tighter mt-1">Control Room</h1>
+      <div className="flex items-end justify-between">
+        <div>
+          <div className="text-[10px] font-mono uppercase tracking-[0.3em] text-zinc-500">Overview</div>
+          <h1 className="font-display text-4xl tracking-tighter mt-1">Control Room</h1>
+        </div>
+        {active && (
+          <div className="text-right">
+            <div className="text-[10px] font-mono uppercase tracking-[0.3em] text-zinc-500">Active project</div>
+            <div className="font-display text-xl tracking-tight text-zinc-300" data-testid="active-project-label">{active.name}</div>
+          </div>
+        )}
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">

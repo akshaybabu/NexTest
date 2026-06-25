@@ -1,11 +1,13 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { api } from "@/lib/api";
+import { useActiveProject } from "@/auth/ProjectContext";
 import { Plus, Save, Play, Trash2, GripVertical, FilePlus, Loader2 } from "lucide-react";
 
 export default function TestBuilderPage() {
   const [params, setParams] = useSearchParams();
-  const projectId = params.get("project") || "";
+  const { activeId } = useActiveProject();
+  const projectId = params.get("project") || activeId || "";
   const tcId = params.get("tc") || "";
 
   const [projects, setProjects] = useState([]);
@@ -29,6 +31,14 @@ export default function TestBuilderPage() {
       setProjects(p.data); setKeywords(k.data);
     })();
   }, []);
+
+  // If active project changes and no explicit project in URL, follow it
+  useEffect(() => {
+    if (!params.get("project") && activeId) {
+      setParams({ project: activeId }, { replace: true });
+    }
+    // eslint-disable-next-line
+  }, [activeId]);
 
   useEffect(() => {
     if (!projectId) return;
